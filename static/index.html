@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>SecurePredict Health — Advanced Healthcare Platform</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body class="landing-body">
+
+  <!-- Animated Background -->
+  <div class="bg-grid"></div>
+  <div class="bg-orb orb1"></div>
+  <div class="bg-orb orb2"></div>
+  <div class="bg-orb orb3"></div>
+
+  <nav class="navbar">
+    <div class="nav-brand">
+      <span class="brand-icon">⚕</span>
+      <span class="brand-name">SecurePredict<span class="brand-accent">Health</span></span>
+    </div>
+    <div class="nav-badge">HACK24 Prototype</div>
+  </nav>
+
+  <main class="landing-main">
+    <div class="hero-section">
+      <div class="hero-tag">🛡️ AES-256 Encrypted · AI-Powered · Real-Time</div>
+      <h1 class="hero-title">Advanced Secure<br/><span class="gradient-text">Predictive Healthcare</span></h1>
+      <p class="hero-sub">OTP-gated patient records, explainable AI risk prediction, and geospatial outbreak detection — all in one platform.</p>
+
+      <div class="portal-cards">
+        <!-- Doctor Card -->
+        <div class="portal-card" id="doctorCard">
+          <div class="portal-card-icon">👨‍⚕️</div>
+          <h2>Doctor Portal</h2>
+          <p>Diagnose patients, view AI risk scores, and monitor regional outbreaks.</p>
+          <div class="portal-tabs">
+            <button class="tab-btn active" onclick="switchAuthTab('doctor','login')">Login</button>
+            <button class="tab-btn" onclick="switchAuthTab('doctor','register')">Register</button>
+          </div>
+          <!-- Doctor Login -->
+          <div id="doctor-login" class="auth-form active-form">
+            <input type="email" id="doc-login-email" placeholder="Doctor Email" class="inp"/>
+            <input type="text" id="doc-login-license" placeholder="License Number" class="inp"/>
+            <button class="btn-primary" onclick="doctorLogin()">Enter Portal →</button>
+            <p class="info-note">🔐 Accounts require admin approval before access</p>
+          </div>
+          <!-- Doctor Register -->
+          <div id="doctor-register" class="auth-form">
+            <input type="text" id="doc-reg-name" placeholder="Full Name" class="inp"/>
+            <input type="email" id="doc-reg-email" placeholder="Email" class="inp"/>
+            <input type="text" id="doc-reg-license" placeholder="Medical License Number" class="inp"/>
+            <input type="text" id="doc-reg-spec" placeholder="Specialization (e.g. Cardiology)" class="inp"/>
+            <button class="btn-primary" onclick="doctorRegister()">Register →</button>
+          </div>
+        </div>
+
+        <!-- Divider -->
+        <div class="portal-divider"><span>or</span></div>
+
+        <!-- Patient Card -->
+        <div class="portal-card" id="patientCard">
+          <div class="portal-card-icon">🧑‍💼</div>
+          <h2>Patient Portal</h2>
+          <p>View your health timeline, medicine schedule, and local outbreak alerts.</p>
+          <div class="portal-tabs">
+            <button class="tab-btn active" onclick="switchAuthTab('patient','login')">Login</button>
+            <button class="tab-btn" onclick="switchAuthTab('patient','register')">Register</button>
+          </div>
+          <!-- Patient Login -->
+          <div id="patient-login" class="auth-form active-form">
+            <input type="tel" id="pat-login-mobile" placeholder="Registered Mobile Number" class="inp"/>
+            <button class="btn-secondary" onclick="patientLogin()">View My Health →</button>
+          </div>
+          <!-- Patient Register -->
+          <div id="patient-register" class="auth-form">
+            <input type="text" id="pat-reg-name" placeholder="Full Name" class="inp"/>
+            <input type="tel" id="pat-reg-mobile" placeholder="Mobile Number (Unique ID)" class="inp"/>
+            <input type="date" id="pat-reg-dob" placeholder="Date of Birth" class="inp"/>
+            <select id="pat-reg-gender" class="inp">
+              <option value="">Select Gender</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+              <option value="Other">Other</option>
+            </select>
+            <input type="text" id="pat-reg-pincode" placeholder="Home Pincode (e.g. 560037)" class="inp"/>
+            <input type="text" id="pat-reg-genetic" placeholder="Genetic History (e.g. Diabetes)" class="inp"/>
+            <input type="text" id="pat-reg-habits" placeholder="Lifestyle Habits (e.g. Smoking)" class="inp"/>
+            <button class="btn-secondary" onclick="patientRegister()">Register →</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="toast"></div>
+
+  <script src="app.js"></script>
+  <script>
+    function switchAuthTab(portal, tab) {
+      const prefix = portal === 'doctor' ? 'doc' : 'pat';
+      document.getElementById(`${portal}-login`).classList.remove('active-form');
+      document.getElementById(`${portal}-register`).classList.remove('active-form');
+      document.getElementById(`${portal}-${tab}`).classList.add('active-form');
+
+      const card = document.getElementById(`${portal === 'doctor' ? 'doctor' : 'patient'}Card`);
+      card.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      event.target.classList.add('active');
+    }
+  </script>
+</body>
+</html>

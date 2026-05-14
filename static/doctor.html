@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Doctor Portal — SecurePredict</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="style.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="dash-body">
+<div class="bg-grid"></div>
+<div class="bg-orb orb1"></div>
+<div class="bg-orb orb2"></div>
+
+<!-- NAVBAR -->
+<nav class="navbar">
+  <div class="nav-brand">
+    <span class="brand-icon">⚕</span>
+    <span class="brand-name">SecurePredict<span class="brand-accent">Health</span></span>
+  </div>
+  <div class="nav-user">
+    <span id="nav-doc-name">Doctor</span>
+    <div class="nav-avatar">👨‍⚕️</div>
+    <button class="nav-logout" onclick="logout()">Logout</button>
+  </div>
+</nav>
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+  <div class="sidebar-section">Main</div>
+  <button class="sidebar-link active" onclick="showPage('overview',this)"><span class="icon">🏠</span>Overview</button>
+  <button class="sidebar-link" onclick="showPage('search',this)"><span class="icon">🔍</span>Patient Access</button>
+  <button class="sidebar-link" onclick="showPage('diagnose',this)"><span class="icon">📋</span>New Diagnosis</button>
+  <div class="sidebar-section">Analytics</div>
+  <button class="sidebar-link" onclick="showPage('airisks',this)"><span class="icon">🧠</span>AI Risk Engine</button>
+  <button class="sidebar-link" onclick="showPage('map',this)"><span class="icon">🗺️</span>Outbreak Map</button>
+  <div class="sidebar-section">Admin</div>
+  <button class="sidebar-link" onclick="showPage('auditlogs',this)"><span class="icon">📜</span>Audit Logs</button>
+</aside>
+
+<!-- MAIN CONTENT -->
+<main class="dash-content">
+
+  <!-- OVERVIEW PAGE -->
+  <div class="page active" id="page-overview">
+    <div class="page-title">Dashboard Overview</div>
+    <div class="page-sub" id="doc-welcome">Welcome back, Doctor</div>
+    <div class="metrics-row">
+      <div class="metric-card blue">
+        <div class="metric-label">Patients Accessed Today</div>
+        <div class="metric-value" id="m-accessed">0</div>
+        <div class="metric-sub">via OTP sessions</div>
+      </div>
+      <div class="metric-card red">
+        <div class="metric-label">Active Outbreaks</div>
+        <div class="metric-value" id="m-outbreaks">0</div>
+        <div class="metric-sub">flagged pincodes</div>
+      </div>
+      <div class="metric-card purple">
+        <div class="metric-label">Total Diagnoses</div>
+        <div class="metric-value" id="m-diagnoses">0</div>
+        <div class="metric-sub">logged records</div>
+      </div>
+      <div class="metric-card green">
+        <div class="metric-label">Security Status</div>
+        <div class="metric-value" style="font-size:1.1rem;margin-top:6px">AES-256 ✓</div>
+        <div class="metric-sub">All data encrypted</div>
+      </div>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">⚠️ Active Outbreak Alerts</div>
+        <div id="overview-outbreaks"><p style="color:var(--text2);font-size:.85rem">Checking outbreaks…</p></div>
+      </div>
+      <div class="card">
+        <div class="card-title">📜 Recent Audit Events</div>
+        <div id="overview-logs"><p style="color:var(--text2);font-size:.85rem">Loading…</p></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PATIENT SEARCH PAGE -->
+  <div class="page" id="page-search">
+    <div class="page-title">Patient Access</div>
+    <div class="page-sub">Enter patient mobile & verify OTP to unlock encrypted records</div>
+    <div class="grid-2">
+      <div class="card">
+          <div class="card-title">🔑 Secure OTP Handshake</div>
+          <div class="page-sub" style="margin-bottom:15px">Link patient device via Virtual SMS simulation</div>
+          
+          <label style="font-size:.82rem;color:var(--text2)">1. Locate Patient Device (Mobile)</label>
+          <div style="display:flex;gap:8px;margin-top:6px">
+            <input class="inp" id="s-mobile" placeholder="e.g. 7975331254" style="flex:1;margin:0"/>
+            <button class="btn-primary btn-sm" onclick="searchPatientForOTP()" style="width:100px">Search</button>
+          </div>
+          
+          <!-- Search Result & Push Button (Hidden by default) -->
+          <div id="search-info" style="margin-top:14px;display:none;background:rgba(79,142,247,0.08);border:1px solid rgba(79,142,247,0.2);border-radius:12px;padding:16px;animation:slideDown 0.3s ease">
+             <div style="font-size:.72rem;color:var(--accent);font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Patient Device Located</div>
+             <div id="target-pat-name" style="font-weight:700;font-size:1.1rem;color:#fff;margin-bottom:4px"></div>
+             <div style="font-size:.8rem;color:var(--text2)">Database ID: <span id="target-pat-id" style="color:var(--accent);font-weight:600"></span></div>
+             
+             <button class="btn-secondary btn-sm" style="width:100%;margin-top:14px;background:var(--accent);color:#fff" onclick="pushOTPToVaultAuto()">
+               📱 Push Virtual SMS to Patient
+             </button>
+             <div id="push-status-text" style="font-size:.72rem;color:var(--text2);margin-top:8px;text-align:center">Click above to send the code</div>
+          </div>
+
+          <hr class="divider"/>
+          
+          <label style="font-size:.82rem;color:var(--text2)">2. Verify Received OTP</label>
+          <input class="inp" id="s-otp" placeholder="••••••" type="password" maxlength="6" style="margin-top:6px"/>
+          <button class="btn-green" style="margin-top:8px;width:100%" onclick="verifyOTP()">Authorize &amp; Unlock Records</button>
+        </div>
+      <div class="card" id="patient-record-card">
+        <div class="card-title">🔐 Decrypted Patient Record</div>
+        <div id="patient-record"><p style="color:var(--text2);font-size:.85rem">No patient loaded yet. Complete OTP verification to view records.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- NEW DIAGNOSIS PAGE -->
+  <div class="page" id="page-diagnose">
+    <div class="page-title">Log New Diagnosis</div>
+    <div class="page-sub">Save diagnosis and prescription for the currently authorized patient</div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">📋 Diagnosis Details</div>
+        <label class="inp-label">Patient ID</label>
+        <input class="inp" id="d-patient-id" placeholder="Auto-filled after OTP auth"/>
+        <label class="inp-label">Primary Symptoms</label>
+        <select class="inp" id="d-symptoms">
+          <option value="Dengue">Dengue</option>
+          <option value="High Fever">High Fever</option>
+          <option value="Hypertension">Hypertension</option>
+          <option value="Diabetes">Diabetes</option>
+          <option value="Cardiovascular">Cardiovascular</option>
+          <option value="Rashes">Rashes</option>
+          <option value="General Fatigue">General Fatigue</option>
+        </select>
+        <label class="inp-label">Patient Pincode</label>
+        <input class="inp" id="d-pincode" placeholder="e.g. 560037"/>
+        <label class="inp-label">Follow-Up Date</label>
+        <input class="inp" type="date" id="d-followup"/>
+      </div>
+      <div class="card">
+        <div class="card-title">💊 Prescription</div>
+        <div id="med-list">
+          <div class="med-row" style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:8px;align-items:center;margin-bottom:10px;font-size:.78rem;color:var(--text2)">
+            <span>Medicine</span><span>Morning</span><span>Afternoon</span><span>Night</span><span></span>
+          </div>
+          <div id="med-rows"></div>
+        </div>
+        <button class="btn-ghost btn-sm" onclick="addMedRow()" style="margin-top:8px">+ Add Medicine</button>
+        <hr class="divider"/>
+        <button class="btn-primary" onclick="saveDiagnosis()">Save Diagnosis & Update Community Data</button>
+        <div id="diag-status" style="margin-top:12px"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI RISK ENGINE PAGE -->
+  <div class="page" id="page-airisks">
+    <div class="page-title">🧠 XAI Risk Predictor</div>
+    <div class="page-sub">Explainable AI chronic disease risk analysis for the current patient</div>
+    <div id="risk-no-patient" class="alert-banner safe">
+      <span>ℹ️</span> Authorize a patient via OTP on the Patient Access page first.
+    </div>
+    <div id="risk-content" style="display:none">
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title">Overall Risk Score</div>
+          <div style="text-align:center;padding:20px 0">
+            <div class="risk-total" id="risk-score-val">—</div>
+            <div style="color:var(--text2);font-size:.85rem;margin-top:6px">Aggregate Disease Risk</div>
+            <canvas id="riskGauge" width="200" height="100" style="margin-top:16px"></canvas>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Risk Breakdown — Why AI Flagged This</div>
+          <div id="risk-breakdown"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAP PAGE -->
+  <div class="page" id="page-map">
+    <div class="page-title">🗺️ Geospatial Outbreak Engine</div>
+    <div class="page-sub">Live community health surveillance across Bengaluru pincodes</div>
+    <div id="outbreak-legend" style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap"></div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <div id="map" style="height:500px;width:100%"></div>
+    </div>
+    <div style="margin-top:20px">
+      <div class="card-title">Flagged Outbreak Zones</div>
+      <div id="outbreak-list" style="margin-top:12px"></div>
+    </div>
+  </div>
+
+  <!-- AUDIT LOGS PAGE -->
+  <div class="page" id="page-auditlogs">
+    <div class="page-title">📜 Security Audit Logs</div>
+    <div class="page-sub">Complete trail of every data access event on this platform</div>
+    <div class="card">
+      <div id="audit-log-list"><p style="color:var(--text2)">Loading…</p></div>
+    </div>
+  </div>
+
+</main>
+
+<div id="toast" class="toast"></div>
+
+<script>
+const API = 'http://127.0.0.1:8000';
+let currentPatient = null;
+let currentDoctor  = null;
+let leafletMap     = null;
+let medCount       = 0;
+
+// ── Init ──────────────────────────────────────────────────
+window.onload = async ()=>{
+  const d = sessionStorage.getItem('doctor');
+  if(!d){ window.location.href='index.html'; return; }
+  currentDoctor = JSON.parse(d);
+  document.getElementById('nav-doc-name').textContent = currentDoctor.name;
+  document.getElementById('doc-welcome').textContent  = `Welcome, ${currentDoctor.name} · ${currentDoctor.specialization}`;
+  addMedRow();
+  await loadOverview();
+};
+
+function logout(){ sessionStorage.clear(); window.location.href='index.html'; }
+
+// ── Navigation ────────────────────────────────────────────
+function showPage(id, el){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.sidebar-link').forEach(b=>b.classList.remove('active'));
+  document.getElementById('page-'+id).classList.add('active');
+  el.classList.add('active');
+  if(id==='map')    setTimeout(loadMap,100);
+  if(id==='auditlogs') loadAuditLogs();
+  if(id==='airisks')   loadRisk();
+}
+
+// ── Toast ─────────────────────────────────────────────────
+function toast(msg,type='info'){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.className=`toast ${type} show`;
+  setTimeout(()=>t.classList.remove('show'),3500);
+}
+
+// ── Overview ──────────────────────────────────────────────
+async function loadOverview(){
+  const [ob, logs] = await Promise.all([
+    fetch(`${API}/outbreaks`).then(r=>r.json()),
+    fetch(`${API}/audit_logs`).then(r=>r.json())
+  ]);
+  document.getElementById('m-outbreaks').textContent = ob.length;
+  document.getElementById('m-diagnoses').textContent = logs.length;
+
+  // Outbreaks
+  const oDiv = document.getElementById('overview-outbreaks');
+  oDiv.innerHTML = ob.length ? ob.map(o=>`
+    <div class="alert-banner danger" style="margin-bottom:8px">
+      🚨 <strong>${o.symptom}</strong> outbreak in Pincode <strong>${o.pincode}</strong> — ${o.count} cases
+    </div>`).join('') : '<div class="alert-banner safe">✅ No active outbreaks detected.</div>';
+
+  // Logs
+  const lDiv = document.getElementById('overview-logs');
+  lDiv.innerHTML = logs.slice(0,5).map(l=>`
+    <div class="log-item">
+      <div class="log-dot"></div>
+      <div><div class="log-event">${l.event}</div>
+      <div class="log-time">${l.timestamp?.replace('T',' ').slice(0,19)||''}</div></div>
+    </div>`).join('');
+}
+
+// ── OTP Flow ──────────────────────────────────────────────
+// ── OTP Flow (Automated Simulation) ───────────────────────
+let selectedPatientId = null;
+
+async function searchPatientForOTP(){
+  const mobile = document.getElementById('s-mobile').value.trim();
+  if(!mobile) return toast('Enter mobile number','error');
+  
+  const res = await fetch(`${API}/patient/dashboard/${mobile}`);
+  if(!res.ok){
+     toast('Patient not found. Register them first.','error');
+     return;
+  }
+  const data = await res.json();
+  selectedPatientId = data.patient.id;
+  
+  document.getElementById('target-pat-name').textContent = data.patient.name;
+  document.getElementById('target-pat-id').textContent = '#' + selectedPatientId;
+  document.getElementById('search-info').style.display = 'block';
+  toast('Device Located!','success');
+}
+
+async function pushOTPToVaultAuto(){
+  if(!selectedPatientId) return toast('Search for a patient first','error');
+  const btn = event.target;
+  btn.textContent = '⚡ Sending...';
+  
+  const res = await fetch(`${API}/request-access/${selectedPatientId}?doctor_id=${currentDoctor.id}`,{method:'POST'});
+  if(res.ok){
+    toast('Virtual SMS Delivered! ✓','success');
+    document.getElementById('push-status-text').innerHTML = '✅ <strong>Sent!</strong> Check the Patient Dashboard window.';
+    btn.textContent = '📱 Resend Virtual SMS';
+    btn.style.background = 'rgba(79,142,247,0.2)';
+  } else {
+    toast('Delivery failed','error');
+    btn.textContent = '📱 Push Virtual SMS to Patient';
+  }
+}
+
+async function requestOTP(){ searchPatientForOTP(); }
+async function pushOTPToVault(){ pushOTPToVaultAuto(); }
+
+async function verifyOTP(){
+  const mobile = document.getElementById('s-mobile').value.trim();
+  const otp    = document.getElementById('s-otp').value.trim();
+  if(!mobile||!otp) return toast('Enter mobile and OTP','error');
+  const res = await fetch(`${API}/otp/verify?mobile=${mobile}&otp=${otp}&doctor_id=${currentDoctor.id}`);
+  if(!res.ok){ toast('Invalid or expired OTP','error'); return; }
+  const data = await res.json();
+  currentPatient = data.patient_data;
+  document.getElementById('d-patient-id').value = currentPatient.id;
+  document.getElementById('d-pincode').value    = currentPatient.pincode;
+  renderPatientRecord(currentPatient);
+  toast('Access Granted! Records unlocked ✓','success');
+  document.getElementById('m-accessed').textContent =
+    parseInt(document.getElementById('m-accessed').textContent||0)+1;
+}
+
+function renderPatientRecord(p){
+  document.getElementById('patient-record').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+      <div><div class="metric-label">Name</div><div style="font-weight:600">${p.name}</div></div>
+      <div><div class="metric-label">ID</div><div style="font-weight:600">#${p.id}</div></div>
+      <div><div class="metric-label">Date of Birth</div><div style="font-weight:600">${p.dob}</div></div>
+      <div><div class="metric-label">Pincode</div><div style="font-weight:600">${p.pincode}</div></div>
+    </div>
+    <div style="background:rgba(124,58,237,.1);border:1px solid rgba(124,58,237,.3);border-radius:10px;padding:12px;margin-bottom:10px">
+      <div style="font-size:.75rem;color:#a78bfa;margin-bottom:4px">🔐 DECRYPTED — Genetic History</div>
+      <div style="font-size:.9rem">${p.genetic_history||'None recorded'}</div>
+    </div>
+    <div style="background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:10px;padding:12px">
+      <div style="font-size:.75rem;color:var(--orange);margin-bottom:4px">⚠️ DECRYPTED — Lifestyle Habits</div>
+      <div style="font-size:.9rem">${p.habits||'None recorded'}</div>
+    </div>`;
+}
+
+// ── Diagnosis ─────────────────────────────────────────────
+function addMedRow(){
+  medCount++;
+  const r = document.createElement('div');
+  r.style.cssText='display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:8px;align-items:center;margin-bottom:8px';
+  r.innerHTML = `
+    <input class="inp" placeholder="Medicine name" style="margin:0" id="med-name-${medCount}"/>
+    <label style="display:flex;gap:6px;align-items:center;font-size:.82rem"><input type="checkbox" id="med-m-${medCount}"> Morning</label>
+    <label style="display:flex;gap:6px;align-items:center;font-size:.82rem"><input type="checkbox" id="med-a-${medCount}"> Afternoon</label>
+    <label style="display:flex;gap:6px;align-items:center;font-size:.82rem"><input type="checkbox" id="med-n-${medCount}"> Night</label>
+    <button onclick="this.parentElement.remove()" style="background:rgba(239,68,68,.2);border:1px solid rgba(239,68,68,.3);color:var(--red);border-radius:6px;padding:4px 8px;cursor:pointer">✕</button>`;
+  document.getElementById('med-rows').appendChild(r);
+}
+
+function getMeds(){
+  const meds=[];
+  for(let i=1;i<=medCount;i++){
+    const n=document.getElementById(`med-name-${i}`);
+    if(n&&n.value){
+      meds.push({
+        name:n.value,
+        morning:document.getElementById(`med-m-${i}`)?.checked||false,
+        afternoon:document.getElementById(`med-a-${i}`)?.checked||false,
+        night:document.getElementById(`med-n-${i}`)?.checked||false
+      });
+    }
+  }
+  return meds;
+}
+
+async function saveDiagnosis(){
+  if(!currentPatient) return toast('Authorize a patient first via OTP','error');
+  const body = {
+    patient_id: parseInt(document.getElementById('d-patient-id').value),
+    doctor_id:  currentDoctor.id,
+    symptoms:   document.getElementById('d-symptoms').value,
+    pincode:    document.getElementById('d-pincode').value,
+    medications: getMeds(),
+    follow_up_date: document.getElementById('d-followup').value
+  };
+  const res = await fetch(`${API}/diagnosis`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(res.ok){
+    toast('Diagnosis saved! Community data updated ✓','success');
+    document.getElementById('diag-status').innerHTML=`<div class="alert-banner safe">✅ Logged successfully. Check Outbreak Map for updates.</div>`;
+    loadOverview();
+  } else toast('Failed to save','error');
+}
+
+// ── AI Risk ───────────────────────────────────────────────
+async function loadRisk(){
+  if(!currentPatient){
+    document.getElementById('risk-no-patient').style.display='flex';
+    document.getElementById('risk-content').style.display='none'; return;
+  }
+  document.getElementById('risk-no-patient').style.display='none';
+  document.getElementById('risk-content').style.display='block';
+  const res = await fetch(`${API}/risk_predict?patient_id=${currentPatient.id}`);
+  const data = await res.json();
+  document.getElementById('risk-score-val').textContent = data.risk_percentage+'%';
+  document.getElementById('risk-score-val').style.color =
+    data.risk_percentage>60?'var(--red)':data.risk_percentage>30?'var(--orange)':'var(--green)';
+
+  const bd = document.getElementById('risk-breakdown');
+  bd.innerHTML = Object.entries(data.breakdown).map(([k,v])=>`
+    <div class="risk-factor">
+      <div class="risk-label"><span>${k}</span><span style="font-weight:600">${v}%</span></div>
+      <div class="risk-bar-bg"><div class="risk-bar-fill" style="width:${Math.min(v/data.risk_percentage*100,100)}%;background:${v>25?'linear-gradient(90deg,var(--red),var(--orange))':'linear-gradient(90deg,var(--accent),var(--accent2))'}"></div></div>
+    </div>`).join('');
+  setTimeout(()=>document.querySelectorAll('.risk-bar-fill').forEach(b=>{const w=b.style.width;b.style.width='0';setTimeout(()=>b.style.width=w,50)}),100);
+}
+
+// ── Map ───────────────────────────────────────────────────
+const PINCODES = {
+  '560001':[12.9716,77.5946,'MG Road'],
+  '560037':[12.9600,77.7100,'Marathahalli'],
+  '560066':[12.9667,77.7500,'Whitefield'],
+  '560002':[12.9826,77.5877,'Shivajinagar'],
+  '560020':[12.9279,77.6271,'Koramangala'],
+  '560034':[13.0358,77.5970,'Hebbal'],
+};
+
+async function loadMap(){
+  if(leafletMap) return;
+  leafletMap = L.map('map').setView([12.9716,77.5946],12);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
+    attribution:'©OpenStreetMap ©CartoDB', subdomains:'abcd', maxZoom:20
+  }).addTo(leafletMap);
+
+  const ob = await fetch(`${API}/outbreaks`).then(r=>r.json());
+  const outPincodes = ob.map(o=>o.pincode);
+  const legend = document.getElementById('outbreak-legend');
+  const list   = document.getElementById('outbreak-list');
+  legend.innerHTML='';
+  list.innerHTML='';
+
+  for(const [pc,[lat,lng,area]] of Object.entries(PINCODES)){
+    const isOut = outPincodes.includes(pc);
+    const color = isOut?'#ef4444':'#22c55e';
+    const matchOb = ob.find(o=>o.pincode===pc);
+    L.circle([lat,lng],{
+      color,fillColor:color,fillOpacity:0.25,
+      radius:isOut?1500:700,weight:isOut?2:1
+    }).addTo(leafletMap)
+     .bindPopup(`<b>${area}</b><br>Pincode: ${pc}<br>${isOut?`🚨 OUTBREAK: ${matchOb?.symptom} — ${matchOb?.count} cases`:'✅ Normal'}`);
+
+    if(isOut){
+      L.marker([lat,lng],{
+        icon:L.divIcon({html:`<div style="background:rgba(239,68,68,.9);color:#fff;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:700;white-space:nowrap">🚨 ${matchOb?.symptom}</div>`,iconSize:[120,28]})
+      }).addTo(leafletMap);
+      list.innerHTML+=`<div class="alert-banner danger" style="margin-bottom:8px">🚨 <strong>${matchOb?.symptom}</strong> outbreak in ${area} (${pc}) — <strong>${matchOb?.count} cases</strong></div>`;
+    }
+    legend.innerHTML+=`<span class="tag" style="background:${isOut?'rgba(239,68,68,.15)':'rgba(34,197,94,.1)'};color:${color};border-color:${color}40">${isOut?'🔴':'🟢'} ${area} (${pc})</span>`;
+  }
+  if(!ob.length) list.innerHTML='<div class="alert-banner safe">✅ No active outbreaks. All zones normal.</div>';
+}
+
+// ── Audit Logs ────────────────────────────────────────────
+async function loadAuditLogs(){
+  const logs = await fetch(`${API}/audit_logs`).then(r=>r.json());
+  document.getElementById('audit-log-list').innerHTML = logs.length
+    ? logs.map(l=>`<div class="log-item"><div class="log-dot"></div><div><div class="log-event">${l.event}</div><div class="log-time">${l.timestamp?.replace('T',' ').slice(0,19)||''}</div></div></div>`).join('')
+    : '<p style="color:var(--text2)">No audit events yet.</p>';
+}
+</script>
+</body>
+</html>

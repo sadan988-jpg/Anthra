@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Patient Portal — SecurePredict</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body class="dash-body">
+<div class="bg-grid"></div>
+<div class="bg-orb orb1"></div>
+<div class="bg-orb orb2"></div>
+
+<!-- NAVBAR -->
+<nav class="navbar">
+  <div class="nav-brand">
+    <span class="brand-icon">⚕</span>
+    <span class="brand-name">SecurePredict<span class="brand-accent">Health</span></span>
+  </div>
+  <div class="nav-user">
+    <span id="nav-pat-name">Patient</span>
+    <div class="nav-avatar">🧑‍💼</div>
+    <button class="nav-logout" onclick="logout()">Logout</button>
+  </div>
+</nav>
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+  <div class="sidebar-section">My Health</div>
+  <button class="sidebar-link active" onclick="showPage('home',this)"><span class="icon">🏠</span>Home</button>
+  <button class="sidebar-link" onclick="showPage('meds',this)"><span class="icon">💊</span>Medications</button>
+  <button class="sidebar-link" onclick="showPage('history',this)"><span class="icon">📋</span>Health History</button>
+  <div class="sidebar-section">Security</div>
+  <button class="sidebar-link" onclick="showPage('security',this)"><span class="icon">🔑</span>Security Keys</button>
+  <button class="sidebar-link" onclick="showPage('auditlogs',this)"><span class="icon">📜</span>Audit Trail</button>
+  <div class="sidebar-section">Support</div>
+  <button class="sidebar-link" onclick="showPage('chatbot',this)"><span class="icon">💬</span>Health Assistant</button>
+</aside>
+
+<main class="dash-content">
+
+  <!-- HOME PAGE -->
+  <div class="page active" id="page-home">
+    <div class="page-title" id="home-title">My Health Dashboard</div>
+    <div class="page-sub" id="home-sub">Your personal health command center</div>
+    <div id="outbreak-banner" style="margin-bottom:16px"></div>
+    <div class="metrics-row" style="grid-template-columns:repeat(3,1fr)">
+      <div class="metric-card blue">
+        <div class="metric-label">Registered Pincode</div>
+        <div class="metric-value" style="font-size:1.4rem" id="h-pincode">—</div>
+      </div>
+      <div class="metric-card purple">
+        <div class="metric-label">Active Prescriptions</div>
+        <div class="metric-value" id="h-rx">0</div>
+      </div>
+      <div class="metric-card green">
+        <div class="metric-label">Next Follow-Up</div>
+        <div class="metric-value" style="font-size:1.1rem;margin-top:6px" id="h-followup">—</div>
+      </div>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">🔐 Data Privacy Status</div>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--bg2);border-radius:10px">
+            <span style="font-size:.88rem">Medical Records Encryption</span>
+            <span class="status-badge approved">AES-256 ACTIVE</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--bg2);border-radius:10px">
+            <span style="font-size:.88rem">Genetic Data</span>
+            <span class="status-badge approved">ENCRYPTED</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--bg2);border-radius:10px">
+            <span style="font-size:.88rem">Access Control</span>
+            <span class="status-badge approved">OTP GATED</span>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">📅 Today's Quick Schedule</div>
+        <div id="home-meds-quick"><p style="color:var(--text2);font-size:.85rem">No medications scheduled.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MEDICATIONS PAGE -->
+  <div class="page" id="page-meds">
+    <div class="page-title">💊 My Medication Schedule</div>
+    <div class="page-sub">Daily prescription tracker — check off your doses</div>
+    <div class="grid-3" id="meds-grid">
+      <div class="card">
+        <div class="card-title">🌅 Morning</div>
+        <div id="morning-list"><p style="color:var(--text2);font-size:.85rem">No medications</p></div>
+      </div>
+      <div class="card">
+        <div class="card-title">☀️ Afternoon</div>
+        <div id="afternoon-list"><p style="color:var(--text2);font-size:.85rem">No medications</p></div>
+      </div>
+      <div class="card">
+        <div class="card-title">🌙 Night</div>
+        <div id="night-list"><p style="color:var(--text2);font-size:.85rem">No medications</p></div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:20px">
+      <div class="card-title">📅 Upcoming Follow-Up Appointments</div>
+      <div id="followup-list" style="margin-top:10px"></div>
+    </div>
+  </div>
+
+  <!-- HISTORY PAGE -->
+  <div class="page" id="page-history">
+    <div class="page-title">📋 Health History</div>
+    <div class="page-sub">All recorded diagnoses and doctor visits</div>
+    <div id="history-list"></div>
+  </div>
+
+  <!-- SECURITY PAGE -->
+  <div class="page" id="page-security">
+    <div class="page-title">🔑 Security & Consent Center</div>
+    <div class="page-sub">Active OTP requests from doctors seeking access to your records</div>
+    <div class="card">
+      <div class="card-title">Active Data Access Requests</div>
+      <div id="otp-requests-list" style="margin-top:12px">
+        <p style="color:var(--text2);font-size:.85rem">Checking for active requests…</p>
+      </div>
+    </div>
+    <div class="card" style="margin-top:20px">
+      <div class="card-title">ℹ️ How Your Data Is Protected</div>
+      <div style="display:flex;flex-direction:column;gap:12px;margin-top:8px;font-size:.88rem;color:var(--text2);line-height:1.7">
+        <p>🛡️ All your health records are encrypted using <strong style="color:var(--text)">AES-256 Fernet encryption</strong> before being stored in the database.</p>
+        <p>🔑 Doctors can only view your records after generating an OTP and receiving your authorization code.</p>
+        <p>📜 Every access event is permanently logged in the Audit Trail, visible to you at all times.</p>
+        <p>❌ You can revoke access by notifying the hospital admin. OTPs expire after use.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- AUDIT LOGS PAGE -->
+  <div class="page" id="page-auditlogs">
+    <div class="page-title">📜 My Audit Trail</div>
+    <div class="page-sub">Complete log of who accessed your data and when</div>
+    <div class="card">
+      <div id="pat-audit-list"><p style="color:var(--text2)">Loading…</p></div>
+    </div>
+  </div>
+
+  <!-- CHATBOT PAGE -->
+  <div class="page" id="page-chatbot">
+    <div class="page-title">💬 Health Assistant</div>
+    <div class="page-sub">Rule-based AI health guide — for emergencies call 108 immediately</div>
+    <div class="card" style="max-width:700px">
+      <div class="chat-container" id="chat-box">
+        <div class="chat-msg bot">👋 Hello! I'm your SecurePredict Health Assistant. I can help with common health questions. For emergencies, always call <strong>108</strong>. What can I help you with today?</div>
+      </div>
+      <div class="chat-input-row">
+        <input class="inp" id="chat-input" placeholder="Type your symptoms or question…" style="margin:0" onkeydown="if(event.key==='Enter')sendChat()"/>
+        <button class="btn-primary" style="width:auto;padding:12px 20px" onclick="sendChat()">Send →</button>
+      </div>
+      <p style="font-size:.75rem;color:var(--text2);margin-top:10px">⚕ This assistant is for informational purposes only. Always consult your doctor.</p>
+    </div>
+  </div>
+
+</main>
+
+<div id="toast" class="toast"></div>
+
+<script>
+const API = 'http://127.0.0.1:8000';
+let patient = null;
+let dashData = null;
+
+// ── Init ──────────────────────────────────────────────────
+window.onload = async ()=>{
+  const p = sessionStorage.getItem('patient');
+  if(!p){ window.location.href='index.html'; return; }
+  patient = JSON.parse(p);
+  document.getElementById('nav-pat-name').textContent = patient.name;
+  document.getElementById('home-title').textContent   = `Welcome, ${patient.name}`;
+  document.getElementById('h-pincode').textContent    = patient.pincode;
+  await loadDashboard();
+
+  // Start both background listener agents
+  startOTPListener(patient.id);         // SMS-style OTP toast — polls every 3s
+  startOutbreakListener(patient.pincode); // Red banner alert — polls every 15s
+};
+
+function logout(){ sessionStorage.clear(); window.location.href='index.html'; }
+
+function showPage(id, el){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.sidebar-link').forEach(b=>b.classList.remove('active'));
+  document.getElementById('page-'+id).classList.add('active');
+  el.classList.add('active');
+  if(id==='auditlogs') loadAuditLogs();
+  if(id==='security')  loadSecurity();
+}
+
+function toast(msg,type='info'){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.className=`toast ${type} show`;
+  setTimeout(()=>t.classList.remove('show'),3500);
+}
+
+// ── Dashboard Load ────────────────────────────────────────
+async function loadDashboard(){
+  const [dbRes, obRes] = await Promise.all([
+    fetch(`${API}/patient/dashboard/${patient.mobile}`),
+    fetch(`${API}/outbreaks`)
+  ]);
+  dashData = await dbRes.json();
+  const outbreaks = await obRes.json();
+
+  // Outbreak banner
+  const ob = outbreaks.find(o=>o.pincode===patient.pincode);
+  const banner = document.getElementById('outbreak-banner');
+  banner.innerHTML = ob
+    ? `<div class="alert-banner danger"><span style="font-size:1.3rem">⚠️</span><div><strong>COMMUNITY ALERT: ${ob.symptom} Outbreak Detected in Your Area (${patient.pincode})</strong><br><span style="font-size:.85rem;opacity:.85">${ob.count} cases reported. Avoid crowded places, stay hydrated, consult your doctor immediately if symptomatic.</span></div></div>`
+    : `<div class="alert-banner safe">✅ Your area (${patient.pincode}) is currently safe — no active outbreaks detected.</div>`;
+
+  // Diagnoses & meds
+  const diagnoses = dashData.diagnoses||[];
+  document.getElementById('h-rx').textContent = diagnoses.length;
+  if(diagnoses.length){
+    const latest = diagnoses[diagnoses.length-1];
+    document.getElementById('h-followup').textContent = latest.follow_up_date||'—';
+  }
+
+  // Quick meds on home
+  renderAllMeds(diagnoses);
+  renderHistory(diagnoses);
+}
+
+function renderAllMeds(diagnoses){
+  const morning=[], afternoon=[], night=[];
+  diagnoses.forEach(d=>{
+    (d.medications||[]).forEach(m=>{
+      if(m.morning)   morning.push(m.name);
+      if(m.afternoon) afternoon.push(m.name);
+      if(m.night)     night.push(m.name);
+    });
+  });
+
+  const fmtList = (arr, session, divId)=>{
+    const el = document.getElementById(divId);
+    if(!el) return;
+    el.innerHTML = arr.length
+      ? arr.map((n,i)=>`<div class="med-item"><input class="med-check" type="checkbox" id="chk-${session}-${i}"/><div><div class="med-name">${n}</div><div class="med-time">${session.charAt(0).toUpperCase()+session.slice(1)} dose</div></div></div>`).join('')
+      : '<p style="color:var(--text2);font-size:.85rem">No medications</p>';
+  };
+  fmtList(morning,'morning','morning-list');
+  fmtList(afternoon,'afternoon','afternoon-list');
+  fmtList(night,'night','night-list');
+
+  // Home quick view
+  const all=[...morning,...afternoon,...night];
+  document.getElementById('home-meds-quick').innerHTML = all.length
+    ? all.slice(0,4).map(n=>`<div class="med-item" style="padding:10px"><input class="med-check" type="checkbox"/><div class="med-name">${n}</div></div>`).join('')
+    : '<p style="color:var(--text2);font-size:.85rem">No medications today.</p>';
+
+  // Followup
+  const fu = document.getElementById('followup-list');
+  if(fu){
+    const fuDates = [...new Set(diagnoses.map(d=>d.follow_up_date).filter(Boolean))];
+    fu.innerHTML = fuDates.length
+      ? fuDates.map(d=>`<div class="med-item"><span style="font-size:1.2rem">📅</span><div><div class="med-name">Scheduled Follow-Up</div><div class="med-time">${d}</div></div></div>`).join('')
+      : '<p style="color:var(--text2);font-size:.85rem">No upcoming appointments.</p>';
+  }
+}
+
+function renderHistory(diagnoses){
+  const el = document.getElementById('history-list');
+  if(!el) return;
+  el.innerHTML = diagnoses.length
+    ? diagnoses.slice().reverse().map(d=>`
+        <div class="diag-card">
+          <div class="diag-header">
+            <span class="diag-symptom">🩺 ${d.symptoms}</span>
+            <span class="diag-badge">${d.pincode}</span>
+          </div>
+          <div class="diag-date">Recorded: ${d.timestamp?.replace('T',' ').slice(0,16)||'Unknown'} &nbsp;|&nbsp; Follow-up: ${d.follow_up_date||'—'}</div>
+          <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px">
+            ${(d.medications||[]).map(m=>`<span class="tag">💊 ${m.name}</span>`).join('')}
+          </div>
+        </div>`).join('')
+    : '<div class="alert-banner safe">No diagnosis records found. Visit your doctor to get started.</div>';
+}
+
+// ── Security Page ─────────────────────────────────────────
+async function loadSecurity(){
+  const res  = await fetch(`${API}/patient/dashboard/${patient.mobile}`);
+  const data = await res.json();
+  const otps = data.active_otps||[];
+  const el   = document.getElementById('otp-requests-list');
+  el.innerHTML = otps.length
+    ? otps.map(o=>`
+        <div style="background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:12px;padding:16px;margin-bottom:10px">
+          <div style="font-size:.78rem;color:var(--text2);margin-bottom:8px">Doctor ID ${o.doctor_id} is requesting access to your records</div>
+          <div style="display:flex;align-items:center;gap:12px">
+            <div class="otp-chip">${o.otp_code}</div>
+            <div style="font-size:.82rem;color:var(--text2)">Share this code with your doctor to grant access. It expires after one use.</div>
+          </div>
+        </div>`).join('')
+    : '<div class="alert-banner safe">✅ No active data requests. Your records are private.</div>';
+}
+
+// ── Audit Logs ────────────────────────────────────────────
+async function loadAuditLogs(){
+  const logs = await fetch(`${API}/audit_logs`).then(r=>r.json());
+  document.getElementById('pat-audit-list').innerHTML = logs.length
+    ? logs.map(l=>`<div class="log-item"><div class="log-dot" style="background:${l.event.includes('GRANTED')?'var(--orange)':'var(--accent)'}"></div><div><div class="log-event">${l.event}</div><div class="log-time">${l.timestamp?.replace('T',' ').slice(0,19)||''}</div></div></div>`).join('')
+    : '<p style="color:var(--text2)">No audit events yet.</p>';
+}
+
+// ══════════════════════════════════════════════════════════
+// LISTENER AGENT 1: OTP Notification Poller (every 3 seconds)
+// Simulates a mobile SMS push notification via polling.
+// ══════════════════════════════════════════════════════════
+function startOTPListener(patientId) {
+  // Create the SMS-style toast container (hidden by default)
+  const smsToast = document.createElement('div');
+  smsToast.id = 'sms-toast';
+  smsToast.style.cssText = `
+    position: fixed; bottom: 30px; right: 30px; z-index: 9999;
+    background: linear-gradient(135deg, #1c2540, #0f1423);
+    border: 1px solid rgba(79,142,247,0.5);
+    border-radius: 16px; padding: 0; width: 320px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(79,142,247,0.2);
+    transform: translateY(120%); transition: transform 0.4s cubic-bezier(0.34,1.56,0.64,1);
+    overflow: hidden;
+  `;
+  smsToast.innerHTML = `
+    <div style="background:rgba(79,142,247,0.15);padding:10px 16px;display:flex;align-items:center;gap:8px;border-bottom:1px solid rgba(79,142,247,0.2)">
+      <span style="font-size:1.1rem">📩</span>
+      <span style="font-size:.78rem;font-weight:600;color:#94a3b8;letter-spacing:.5px">NEW SMS NOTIFICATION</span>
+      <button onclick="dismissSMSToast()" style="margin-left:auto;background:none;border:none;color:#64748b;cursor:pointer;font-size:1rem">✕</button>
+    </div>
+    <div style="padding:16px">
+      <div id="sms-content" style="font-size:.9rem;color:#e2e8f0;line-height:1.5">
+        Your OTP for <strong id="sms-doctor-bold" style="color:#4f8ef7"></strong> is <strong id="sms-otp-bold" style="font-size:1.2rem;letter-spacing:1px;color:#fff;background:rgba(255,255,255,0.1);padding:2px 8px;border-radius:4px"></strong>
+      </div>
+      <div style="font-size:.72rem;color:#64748b;margin-top:12px;display:flex;justify-content:space-between">
+        <span>Just now</span>
+        <span>SecurePredict Health</span>
+      </div>
+    </div>
+    <div id="sms-progress" style="height:3px;background:rgba(79,142,247,0.3);width:100%">
+      <div id="sms-progress-bar" style="height:100%;background:linear-gradient(90deg,#4f8ef7,#7c3aed);width:100%;transition:width 10s linear"></div>
+    </div>
+  `;
+  document.body.appendChild(smsToast);
+
+  let dismissTimer = null;
+
+  window.dismissSMSToast = () => {
+    smsToast.style.transform = 'translateY(120%)';
+    if (dismissTimer) clearTimeout(dismissTimer);
+  };
+
+  // Poll every 3 seconds
+  setInterval(async () => {
+    try {
+      const res = await fetch(`${API}/get-otp/${patientId}`);
+      if (res.status === 204) return; // Nothing pending
+      if (!res.ok) return;
+
+      const data = await res.json();
+
+      // Populate toast with the exact requested wording
+      document.getElementById('sms-doctor-bold').textContent = data.doctor_name;
+      document.getElementById('sms-otp-bold').textContent = data.otp;
+
+      // Animate in
+      smsToast.style.transform = 'translateY(0)';
+
+      // Progress bar countdown (10 seconds)
+      const bar = document.getElementById('sms-progress-bar');
+      bar.style.transition = 'none';
+      bar.style.width = '100%';
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          bar.style.transition = 'width 10s linear';
+          bar.style.width = '0%';
+        });
+      });
+
+      // Auto-dismiss after 10 seconds
+      if (dismissTimer) clearTimeout(dismissTimer);
+      dismissTimer = setTimeout(() => {
+        smsToast.style.transform = 'translateY(120%)';
+      }, 10000);
+
+      // Refresh security tab if open
+      if (document.getElementById('page-security').classList.contains('active')) {
+        loadSecurity();
+      }
+    } catch (e) { /* silently ignore network errors during polling */ }
+  }, 3000);
+}
+
+// ══════════════════════════════════════════════════════════
+// LISTENER AGENT 2: Predictive Outbreak Alert Engine
+// Polls /check-outbreak/{pincode} every 15 seconds.
+// Dynamically injects a red emergency banner if outbreak found.
+// ══════════════════════════════════════════════════════════
+function startOutbreakListener(pincode) {
+  let bannerInjected = false;
+
+  async function checkAndAlert() {
+    try {
+      const res  = await fetch(`${API}/check-outbreak/${pincode}`);
+      if (!res.ok) return;
+      const data = await res.json();
+
+      if (data.outbreak_detected && !bannerInjected) {
+        bannerInjected = true;
+
+        // Build the emergency banner element
+        const banner = document.createElement('div');
+        banner.id = 'emergency-outbreak-banner';
+        banner.style.cssText = `
+          position: fixed; top: 0; left: 0; right: 0; z-index: 8888;
+          background: linear-gradient(135deg, #7f1d1d, #991b1b);
+          border-bottom: 2px solid #ef4444;
+          padding: 0; overflow: hidden;
+          animation: bannerSlideDown 0.5s ease;
+        `;
+
+        const outbreakList = data.outbreaks.map(o =>
+          `<strong>${o.symptom}</strong> (${o.count} cases)`
+        ).join(', ');
+
+        banner.innerHTML = `
+          <div style="display:flex;align-items:center;gap:14px;padding:12px 24px;max-width:1200px;margin:0 auto">
+            <span style="font-size:1.5rem;animation:pulse 1s infinite">🚨</span>
+            <div style="flex:1">
+              <div style="font-size:.92rem;font-weight:700;color:#fecaca">EMERGENCY COMMUNITY HEALTH WARNING — Pincode ${pincode}</div>
+              <div style="font-size:.82rem;color:#fca5a5;margin-top:2px">${outbreakList} detected in your area. Avoid crowded places. Consult your doctor immediately if you feel unwell.</div>
+            </div>
+            <button onclick="document.getElementById('emergency-outbreak-banner').remove(); bannerInjected=false"
+              style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);color:#fff;padding:6px 14px;border-radius:8px;cursor:pointer;font-size:.8rem;white-space:nowrap">
+              Dismiss
+            </button>
+          </div>
+          <style>@keyframes bannerSlideDown{from{transform:translateY(-100%)}to{transform:translateY(0)}}</style>
+        `;
+
+        // Inject at very top of body, push content down
+        document.body.prepend(banner);
+        document.querySelector('.dash-content').style.paddingTop = '130px';
+        document.querySelector('.sidebar').style.paddingTop =
+          (parseInt(getComputedStyle(document.querySelector('.sidebar')).paddingTop) + 50) + 'px';
+
+      } else if (!data.outbreak_detected && bannerInjected) {
+        // Outbreak cleared — remove banner
+        const existing = document.getElementById('emergency-outbreak-banner');
+        if (existing) existing.remove();
+        bannerInjected = false;
+        document.querySelector('.dash-content').style.paddingTop = '80px';
+      }
+    } catch (e) { /* network errors during polling are silent */ }
+  }
+
+  checkAndAlert(); // run immediately on load
+  setInterval(checkAndAlert, 15000); // then every 15 seconds
+}
+
+// ── Chatbot ───────────────────────────────────────────────
+const KB = [
+  {triggers:['chest pain','heart','cardiac'],response:'🚨 <strong>EMERGENCY ALERT!</strong> Chest pain can be life-threatening. Call <strong>108</strong> immediately or go to the nearest ER. Do NOT drive yourself.',type:'emergency'},
+  {triggers:['breathing','breath','breathe','suffocate'],response:'🚨 <strong>EMERGENCY!</strong> Difficulty breathing is a medical emergency. Call <strong>108</strong> now.',type:'emergency'},
+  {triggers:['unconscious','faint','collapse','seizure'],response:'🚨 <strong>EMERGENCY!</strong> Call 108 immediately and place the person in the recovery position.',type:'emergency'},
+  {triggers:['fever','temperature','hot'],response:'🌡️ For fever: rest, stay hydrated, take paracetamol if prescribed. If temperature exceeds 103°F or lasts more than 3 days, consult your doctor.',type:'bot'},
+  {triggers:['dengue'],response:'🦟 <strong>Dengue precautions:</strong> Use mosquito repellent, wear full sleeves, take paracetamol for fever (NOT aspirin/ibuprofen). Seek immediate care if you notice rashes or bleeding.',type:'bot'},
+  {triggers:['headache','head pain'],response:'💊 Mild headaches: rest, hydrate, and take prescribed pain relief. For severe sudden headaches, seek immediate medical attention.',type:'bot'},
+  {triggers:['diabetes','sugar','blood sugar'],response:'🩺 Maintain regular blood sugar monitoring, follow your prescribed diet, and take medications consistently. Watch for dizziness or excessive thirst.',type:'bot'},
+  {triggers:['blood pressure','hypertension','bp'],response:'❤️ Monitor BP daily. Reduce salt intake, exercise regularly, manage stress, and take prescribed medications consistently.',type:'bot'},
+  {triggers:['medication','medicine','tablet','dose'],response:'💊 Always take medications at the scheduled times listed in your prescription timeline. Never skip doses. Check your Medications tab for your schedule.',type:'bot'},
+];
+
+function sendChat(){
+  const input = document.getElementById('chat-input');
+  const msg   = input.value.trim();
+  if(!msg) return;
+  const box = document.getElementById('chat-box');
+
+  box.innerHTML += `<div class="chat-msg user">${msg}</div>`;
+  input.value='';
+  box.scrollTop=box.scrollHeight;
+
+  const lower = msg.toLowerCase();
+  const match = KB.find(k=>k.triggers.some(t=>lower.includes(t)));
+  setTimeout(()=>{
+    const cls = match?.type==='emergency'?'emergency':'bot';
+    const rep = match?.response||'🤖 I\'m a rule-based assistant. I don\'t have an answer for that specific query. For medical advice, please consult your registered doctor.';
+    box.innerHTML+=`<div class="chat-msg ${cls}">${rep}</div>`;
+    box.scrollTop=box.scrollHeight;
+  },600);
+}
+</script>
+</body>
+</html>
