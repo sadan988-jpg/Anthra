@@ -140,13 +140,14 @@ if role == "Doctor Portal":
         st.info("This engine aggregates real-time anomalies from non-invasive patient vitals (BVP) and respiratory cough analysis.")
         
         preds = requests.get(f"{BASE_URL}/api/v1/aggregation/outbreak-status").json()
+        human_preds = preds.get("human_predictions", [])
         
-        if not preds:
+        if not human_preds:
             st.success("No significant anomaly clusters detected in the last 48 hours.")
         else:
             col1, col2 = st.columns([2, 1])
             with col1:
-                df_preds = pd.DataFrame(preds)
+                df_preds = pd.DataFrame(human_preds)
                 st.table(df_preds)
                 
                 # Visualizing anomaly density
@@ -158,13 +159,13 @@ if role == "Doctor Portal":
             with col2:
                 # Map for early warning
                 m2 = folium.Map(location=[12.9716, 77.5946], zoom_start=11)
-                for p in preds:
+                for p in human_preds:
                     coords = pincode_coords.get(p["pincode"], [12.9716, 77.5946])
                     color = "red" if p["risk_level"] == "High" else "orange" if p["risk_level"] == "Medium" else "green"
                     folium.Marker(
                         location=coords,
-                        popup=f"RISK: {p['risk_level']} | Density: {p['anomaly_density']}",
-                        icon=folium.Icon(color=color, icon='info-sign')
+                        popup=f"Risk: {p['risk_level']} - Density: {p['anomaly_density']}",
+                        icon=folium.Icon(color=color)
                     ).add_to(m2)
                 st_folium(m2, width=400, height=400)
 

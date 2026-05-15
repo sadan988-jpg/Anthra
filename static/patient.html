@@ -634,38 +634,301 @@ function startOutbreakListener(pincode) {
   setInterval(checkAndAlert, 15000); // then every 15 seconds
 }
 
-// ── Chatbot ───────────────────────────────────────────────
+// ── AI Doctor Chatbot (Gemini-powered) ───────────────────
+// Primary: calls /api/v1/chat (Gemini LLM — answers ANYTHING like a real doctor)
+// Fallback: local rule-based KB if backend is unreachable
+
+// Generate a unique session ID per login session
+const chatSessionId = 'pat-' + (patient?.id || 'guest') + '-' + Date.now();
+let aiAvailable = true; // will be set false if backend chat fails
+
+// ── Typing indicator helpers ──────────────────────────────
+function showTyping(box) {
+  const id = 'typing-' + Date.now();
+  if (!document.getElementById('dot-pulse-style')) {
+    const s = document.createElement('style');
+    s.id = 'dot-pulse-style';
+    s.textContent = `@keyframes dotPulse{0%,80%,100%{opacity:.2;transform:scale(.8)}40%{opacity:1;transform:scale(1)}}`;
+    document.head.appendChild(s);
+  }
+  box.innerHTML += `<div class="chat-msg bot" id="${id}" style="opacity:.7">
+    <span style="display:inline-flex;gap:5px;align-items:center">
+      <span style="width:8px;height:8px;border-radius:50%;background:currentColor;animation:dotPulse 1.2s infinite 0s"></span>
+      <span style="width:8px;height:8px;border-radius:50%;background:currentColor;animation:dotPulse 1.2s infinite .2s"></span>
+      <span style="width:8px;height:8px;border-radius:50%;background:currentColor;animation:dotPulse 1.2s infinite .4s"></span>
+    </span>
+  </div>`;
+  box.scrollTop = box.scrollHeight;
+  return id;
+}
+
+function removeTyping(id) {
+  const el = document.getElementById(id);
+  if (el) el.remove();
+}
+
+// ── Format AI reply (convert plain text bullets/bold to HTML) ─
+function formatReply(text) {
+  return text
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')   // **bold**
+    .replace(/\*(.*?)\*/g, '<em>$1</em>')                // *italic*
+    .replace(/^[•\-]\s+/gm, '<br>• ')                   // bullet points
+    .replace(/\n\n+/g, '<br><br>')                       // paragraph breaks
+    .replace(/\n/g, '<br>')                              // line breaks
+    .replace(/^<br>/, '');                               // remove leading <br>
+}
+
+// ── Emergency fast-path (no network needed) ───────────────
+const EMERGENCY_TRIGGERS = [
+  'stroke','unconscious',
+  'can\'t breathe','difficulty breathing','severe bleeding','seizure','collapsed'
+];
+
+function checkEmergency(msg) {
+  const lower = msg.toLowerCase();
+  return EMERGENCY_TRIGGERS.some(t => lower.includes(t));
+}
+
+// ── Offline rule-based KB (fallback only) ─────────────────
 const KB = [
-  {triggers:['chest pain','heart','cardiac'],response:'🚨 <strong>EMERGENCY ALERT!</strong> Chest pain can be life-threatening. Call <strong>108</strong> immediately or go to the nearest ER. Do NOT drive yourself.',type:'emergency'},
-  {triggers:['breathing','breath','breathe','suffocate'],response:'🚨 <strong>EMERGENCY!</strong> Difficulty breathing is a medical emergency. Call <strong>108</strong> now.',type:'emergency'},
-  {triggers:['unconscious','faint','collapse','seizure'],response:'🚨 <strong>EMERGENCY!</strong> Call 108 immediately and place the person in the recovery position.',type:'emergency'},
-  {triggers:['fever','temperature','hot'],response:'🌡️ For fever: rest, stay hydrated, take paracetamol if prescribed. If temperature exceeds 103°F or lasts more than 3 days, consult your doctor.',type:'bot'},
-  {triggers:['dengue'],response:'🦟 <strong>Dengue precautions:</strong> Use mosquito repellent, wear full sleeves, take paracetamol for fever (NOT aspirin/ibuprofen). Seek immediate care if you notice rashes or bleeding.',type:'bot'},
-  {triggers:['headache','head pain'],response:'💊 Mild headaches: rest, hydrate, and take prescribed pain relief. For severe sudden headaches, seek immediate medical attention.',type:'bot'},
-  {triggers:['diabetes','sugar','blood sugar'],response:'🩺 Maintain regular blood sugar monitoring, follow your prescribed diet, and take medications consistently. Watch for dizziness or excessive thirst.',type:'bot'},
-  {triggers:['blood pressure','hypertension','bp'],response:'❤️ Monitor BP daily. Reduce salt intake, exercise regularly, manage stress, and take prescribed medications consistently.',type:'bot'},
-  {triggers:['medication','medicine','tablet','dose'],response:'💊 Always take medications at the scheduled times listed in your prescription timeline. Never skip doses. Check your Medications tab for your schedule.',type:'bot'},
+  // ── EMERGENCIES (highest priority) ──────────────────────
+  { triggers:['chest pain','heart attack','cardiac arrest','cardiac'],
+    response:'🚨 <strong>EMERGENCY ALERT!</strong> Chest pain can be life-threatening. Call <strong>108</strong> immediately or go to the nearest ER. Do NOT drive yourself.',
+    type:'emergency', topic:'emergency' },
+  { triggers:['can\'t breathe','can not breathe','difficulty breathing','shortness of breath','suffocate','suffocation'],
+    response:'🚨 <strong>EMERGENCY!</strong> Difficulty breathing is a medical emergency. Call <strong>108</strong> now and sit upright while you wait.',
+    type:'emergency', topic:'emergency' },
+  { triggers:['unconscious','fainted','collapse','collapsed','seizure','stroke'],
+    response:'🚨 <strong>EMERGENCY!</strong> Call 108 immediately. Place the person on their side in the recovery position and do not give food/water.',
+    type:'emergency', topic:'emergency' },
+  { triggers:['bleeding heavily','severe bleeding','blood loss'],
+    response:'🚨 <strong>EMERGENCY!</strong> Apply firm pressure to the wound with a clean cloth and call 108 immediately.',
+    type:'emergency', topic:'emergency' },
+
+  // ── COMMON COLD & FLU ────────────────────────────────────
+  { triggers:['cold','common cold','runny nose','stuffy nose','blocked nose','nasal congestion','sneezing'],
+    response:'🤧 <strong>Common Cold:</strong><br>• Rest well and drink plenty of warm fluids (water, soups, herbal teas)<br>• Steam inhalation 2–3× daily relieves nasal congestion<br>• Honey + ginger tea soothes the throat<br>• Saline nasal drops help clear blockage<br>• If fever exceeds 101°F or lasts >3 days, see your doctor.<br><em>Tip: Wash hands frequently to prevent spread.</em>',
+    type:'bot', topic:'cold', followup:'Would you also like tips for sore throat or fever that often come with a cold?' },
+  { triggers:['flu','influenza','body ache','body pain','chills','feeling sick'],
+    response:'🤒 <strong>Influenza (Flu):</strong><br>• Rest completely — your body needs energy to fight the virus<br>• Take paracetamol/acetaminophen for fever and body aches<br>• Stay hydrated with water and electrolyte drinks<br>• Avoid close contact with others to prevent spreading<br>• Symptoms usually resolve in 5–7 days<br>⚠️ If breathing becomes difficult or you feel extreme weakness, visit a clinic immediately.',
+    type:'bot', topic:'flu' },
+
+  // ── RESPIRATORY ──────────────────────────────────────────
+  { triggers:['cough','coughing','dry cough','wet cough','productive cough','phlegm','mucus'],
+    response:'😮‍💨 <strong>Cough Guidance:</strong><br>• <strong>Dry cough:</strong> Honey + warm water, steam, throat lozenges<br>• <strong>Wet cough (with phlegm):</strong> Stay hydrated to loosen mucus; expectorant syrup if prescribed<br>• Avoid cold drinks and dusty environments<br>• Elevate your head while sleeping<br>⚠️ If cough persists >2 weeks, has blood, or causes chest pain — consult a doctor urgently.',
+    type:'bot', topic:'cough' },
+  { triggers:['sore throat','throat pain','throat infection','tonsil','tonsils','strep'],
+    response:'🗣️ <strong>Sore Throat:</strong><br>• Gargle with warm salt water 3–4× a day<br>• Drink warm liquids; avoid cold beverages<br>• Honey and ginger tea with lemon soothes inflammation<br>• OTC throat lozenges provide temporary relief<br>• If you see white patches/pus or have high fever, you may have strep — see a doctor for antibiotics.',
+    type:'bot', topic:'throat' },
+  { triggers:['asthma','wheezing','wheeze','inhaler'],
+    response:'💨 <strong>Asthma:</strong><br>• Use your prescribed reliever inhaler (usually blue) at the first sign of symptoms<br>• Identify and avoid triggers: dust, pollen, smoke, pets<br>• Never stop preventer medication without doctor advice<br>• Keep a peak flow diary if advised<br>⚠️ If your inhaler isn\'t helping or symptoms worsen rapidly, call 108.',
+    type:'bot', topic:'asthma' },
+
+  // ── FEVER ────────────────────────────────────────────────
+  { triggers:['fever','high temperature','temperature','burning up','hot body'],
+    response:'🌡️ <strong>Fever Management:</strong><br>• Take paracetamol (500–1000 mg) every 6 hours as prescribed<br>• Drink at least 8–10 glasses of water/day<br>• Use cool (not cold) wet cloths on forehead<br>• Rest in a well-ventilated room<br>• Monitor temperature every 4 hours<br>⚠️ Seek immediate care if: fever >103°F, rash appears, difficulty breathing, or if a child under 3 months has any fever.',
+    type:'bot', topic:'fever' },
+
+  // ── DIGESTIVE ────────────────────────────────────────────
+  { triggers:['stomach ache','stomach pain','abdominal pain','belly pain','tummy ache','cramp','cramping'],
+    response:'🤢 <strong>Stomach Pain:</strong><br>• Mild pain: rest, avoid solid food, sip clear fluids<br>• Peppermint or ginger tea may ease cramps<br>• Avoid dairy, fatty or spicy foods temporarily<br>• A warm compress on the abdomen can relieve cramping<br>⚠️ See a doctor if pain is severe, accompanied by fever, or lasts >24 hours.',
+    type:'bot', topic:'stomach' },
+  { triggers:['nausea','vomiting','vomit','throwing up','feel like vomiting','queasy'],
+    response:'🤮 <strong>Nausea & Vomiting:</strong><br>• Sip small amounts of clear fluids (water, ORS, ginger ale) frequently<br>• Eat bland foods: crackers, toast, rice, banana<br>• Ginger (tea/candy) is a proven anti-nausea remedy<br>• Avoid solid food for 1–2 hours after vomiting<br>⚠️ Seek care if vomiting persists >24 h, contains blood, or you show signs of dehydration (dry mouth, no urination).',
+    type:'bot', topic:'nausea' },
+  { triggers:['diarrhea','loose motion','loose stool','watery stool'],
+    response:'🚽 <strong>Diarrhea:</strong><br>• Most important: prevent dehydration — drink ORS (Oral Rehydration Solution)<br>• Eat BRAT diet: Banana, Rice, Applesauce, Toast<br>• Avoid dairy, caffeine, and spicy food<br>• Take prescribed anti-diarrheal only if needed<br>⚠️ If you see blood in stool, severe abdominal pain, or symptoms persist >48 h, see a doctor urgently.',
+    type:'bot', topic:'diarrhea' },
+  { triggers:['constipation','can\'t poop','hard stool','no bowel movement'],
+    response:'💧 <strong>Constipation:</strong><br>• Drink 8–10 glasses of water daily<br>• Increase fiber: fruits, vegetables, whole grains<br>• Exercise daily (even a 20-minute walk helps)<br>• Prune juice or warm water in the morning stimulates bowel movement<br>• If no relief in 3+ days, speak with your doctor about a mild laxative.',
+    type:'bot', topic:'constipation' },
+  { triggers:['acidity','acid reflux','heartburn','gerd','indigestion','burping','gas','bloating'],
+    response:'🔥 <strong>Acidity & Heartburn:</strong><br>• Avoid spicy, oily, or acidic foods and carbonated drinks<br>• Don\'t lie down for 2 hours after eating<br>• Eat smaller, more frequent meals<br>• Antacids (like Gelusil or Digene) provide quick relief<br>• Elevate the head of your bed slightly<br>• If symptoms are frequent or severe, ask your doctor about PPIs.',
+    type:'bot', topic:'acidity' },
+
+  // ── PAIN ─────────────────────────────────────────────────
+  { triggers:['headache','head ache','migraine','head pain','head throbbing'],
+    response:'💊 <strong>Headache:</strong><br>• Drink water — dehydration is a common cause<br>• Rest in a quiet, dark room<br>• A cold/warm compress on the forehead or neck may help<br>• Take prescribed analgesics (paracetamol/ibuprofen) if needed<br>• For migraines: avoid triggers like bright lights, strong smells<br>⚠️ Sudden severe "worst headache of your life" or headache with stiff neck/fever = emergency, call 108.',
+    type:'bot', topic:'headache' },
+  { triggers:['back pain','lower back','backache','spine','sciatica'],
+    response:'🪑 <strong>Back Pain:</strong><br>• Apply ice for the first 48 h, then switch to heat<br>• Gentle stretching and walking (avoid complete bed rest)<br>• Take prescribed anti-inflammatories (ibuprofen) if needed<br>• Improve posture: keep your back straight while sitting<br>• Use a lumbar support cushion<br>⚠️ If pain radiates down the leg, causes numbness, or follows an injury — see a doctor.',
+    type:'bot', topic:'backpain' },
+  { triggers:['joint pain','knee pain','hip pain','arthritis','rheumatoid','swollen joint'],
+    response:'🦴 <strong>Joint Pain:</strong><br>• Rest the joint and apply ice (15 min on, 15 min off) for swelling<br>• Heat therapy helps for stiffness (chronic arthritis)<br>• Gentle range-of-motion exercises prevent stiffness<br>• Take prescribed anti-inflammatories<br>• Avoid high-impact activities during flare-ups<br>⚠️ If a joint is red, very swollen, and hot — this could be septic arthritis, a medical emergency.',
+    type:'bot', topic:'joint' },
+
+  // ── CHRONIC CONDITIONS ───────────────────────────────────
+  { triggers:['diabetes','diabetic','blood sugar','glucose','sugar level','hyperglycemia','hypoglycemia','low sugar','high sugar'],
+    response:'🩺 <strong>Diabetes Management:</strong><br>• Monitor blood glucose as prescribed (fasting, post-meal)<br>• Take insulin or oral medication consistently — never skip<br>• Follow a low-GI diet: avoid refined sugar, white bread, sodas<br>• Exercise 30 minutes daily (walking, cycling)<br>• Check feet daily for cuts or sores (reduced sensation risk)<br>⚠️ <strong>Hypoglycemia (low sugar < 70 mg/dL):</strong> eat 15g fast-acting carbs (glucose tablet, orange juice) immediately.',
+    type:'bot', topic:'diabetes' },
+  { triggers:['blood pressure','hypertension','bp','high bp','low bp','hypotension'],
+    response:'❤️ <strong>Blood Pressure:</strong><br>• Measure BP at the same time daily; keep a log<br>• Reduce salt to <5g/day; avoid processed foods<br>• Exercise 30 min/day (brisk walking, yoga)<br>• Quit smoking and limit alcohol<br>• Manage stress with breathing exercises<br>• Take prescribed antihypertensives without skipping<br>⚠️ BP >180/120 with symptoms (headache, vision changes) = hypertensive crisis. Call 108.',
+    type:'bot', topic:'bp' },
+  { triggers:['thyroid','hypothyroid','hyperthyroid','tsh','thyroxine'],
+    response:'🦋 <strong>Thyroid Condition:</strong><br>• Take thyroid medication (levothyroxine) on an empty stomach, 30 min before breakfast<br>• Don\'t miss doses — even one missed pill affects hormone levels<br>• Get TSH checked every 6 months or as directed<br>• Avoid excess iodine (seaweed) if hyperthyroid<br>• Regular follow-ups with your endocrinologist are essential.',
+    type:'bot', topic:'thyroid' },
+  { triggers:['asthma','inhaler','wheeze','wheezing'],
+    response:'💨 <strong>Asthma:</strong><br>• Use your reliever (blue) inhaler at the first sign<br>• Always carry your inhaler<br>• Avoid triggers: smoke, dust, pollen, cold air<br>• Take preventer (brown) inhaler daily as prescribed<br>• Practice pursed-lip breathing during mild attacks<br>⚠️ If reliever doesn\'t work within 15 min, call 108.',
+    type:'bot', topic:'asthma' },
+
+  // ── SKIN ─────────────────────────────────────────────────
+  { triggers:['rash','skin rash','hives','itching','itch','allergic reaction','allergy','allergies'],
+    response:'🌿 <strong>Skin Rash / Allergy:</strong><br>• Identify and remove the trigger (food, plant, medication, detergent)<br>• Apply calamine lotion or hydrocortisone cream to reduce itching<br>• Take antihistamine (cetirizine/loratadine) as directed<br>• Cool compresses soothe irritated skin<br>• Avoid scratching — it worsens inflammation<br>⚠️ Seek emergency care for rash with swollen lips/throat, difficulty breathing (anaphylaxis).',
+    type:'bot', topic:'rash' },
+  { triggers:['acne','pimple','pimples','breakout','blackhead','zit'],
+    response:'✨ <strong>Acne Care:</strong><br>• Wash face twice daily with a gentle cleanser (no harsh scrubbing)<br>• Use non-comedogenic (oil-free) moisturizer and sunscreen<br>• Apply benzoyl peroxide or salicylic acid gel as directed<br>• Don\'t pop pimples — it causes scarring and spreads bacteria<br>• See a dermatologist for moderate-severe acne (nodular/cystic).',
+    type:'bot', topic:'acne' },
+
+  // ── MENTAL HEALTH ────────────────────────────────────────
+  { triggers:['anxiety','anxious','panic attack','panic','worried','overthinking','stress','stressed'],
+    response:'🧠 <strong>Anxiety & Stress:</strong><br>• <strong>4-7-8 Breathing:</strong> Inhale 4s → Hold 7s → Exhale 8s. Repeat 4×<br>• Grounding: Name 5 things you see, 4 you hear, 3 you can touch<br>• Limit caffeine and news/social media if they worsen anxiety<br>• Regular exercise and sleep are powerful anxiety reducers<br>• Talk to someone you trust<br>⚠️ If anxiety is persistent or affecting daily life, please speak to a mental health professional — it\'s treatable.',
+    type:'bot', topic:'anxiety' },
+  { triggers:['depression','sad','sadness','hopeless','hopelessness','not eating','loss of appetite'],
+    response:'💙 <strong>Feeling Down:</strong><br>• You\'re not alone — depression is a medical condition, not a weakness<br>• Talk to a trusted friend, family member, or counselor<br>• Maintain a routine: consistent sleep, meals, gentle exercise<br>• Limit alcohol — it\'s a depressant<br>• Small steps: a 10-minute walk outside can genuinely help<br>📞 iCall Helpline: 9152987821 | Vandrevala Foundation: 1860-2662-345 (24/7)',
+    type:'bot', topic:'mental' },
+  { triggers:['sleep','insomnia','can\'t sleep','not sleeping','sleepless','sleeping problems'],
+    response:'😴 <strong>Sleep Issues:</strong><br>• Keep a consistent sleep schedule (same bed/wake time daily)<br>• Avoid screens (phone/TV) 1 hour before bed<br>• Keep the room cool, dark, and quiet<br>• No caffeine after 2 PM<br>• A short warm bath or light reading before bed helps<br>• Try 4-7-8 breathing to relax your nervous system<br>• If insomnia persists >2 weeks, speak to your doctor.',
+    type:'bot', topic:'sleep' },
+
+  // ── EYE / EAR / NOSE ────────────────────────────────────
+  { triggers:['eye pain','red eye','conjunctivitis','pink eye','eye infection','blurry vision'],
+    response:'👁️ <strong>Eye Issues:</strong><br>• Rinse eye with clean water if irritated by foreign object<br>• Apply a cold compress for swelling/redness<br>• Use prescribed eye drops — don\'t share with others<br>• Avoid touching/rubbing your eyes<br>• For pink eye: keep hands clean, don\'t share towels<br>⚠️ Sudden vision loss, severe pain, or chemical exposure = emergency, go to ER immediately.',
+    type:'bot', topic:'eye' },
+  { triggers:['ear pain','earache','ear infection','blocked ear','ringing in ear','tinnitus'],
+    response:'👂 <strong>Ear Issues:</strong><br>• A warm compress over the ear eases pain<br>• Keep the ear dry (use a cotton ball while bathing)<br>• Do NOT insert anything (including cotton buds) into the ear canal<br>• Take prescribed pain relievers<br>⚠️ If you have fever, drainage from the ear, or sudden hearing loss — see a doctor promptly.',
+    type:'bot', topic:'ear' },
+
+  // ── WOMEN\'S HEALTH ──────────────────────────────────────
+  { triggers:['period pain','menstrual cramps','menstrual pain','periods','menstruation','dysmenorrhea'],
+    response:'🩺 <strong>Menstrual Cramps:</strong><br>• Apply a heat pad/hot water bottle to the lower abdomen<br>• Take ibuprofen or prescribed analgesics at the first sign of cramps<br>• Light exercise (yoga, walking) reduces prostaglandins that cause cramps<br>• Stay hydrated and reduce salt/caffeine before periods<br>⚠️ If pain is debilitating, interferes with daily life, or is accompanied by heavy bleeding — see a gynecologist (may indicate endometriosis).',
+    type:'bot', topic:'womens' },
+
+  // ── MEDICATION & DOSING ──────────────────────────────────
+  { triggers:['medication','medicine','tablet','pill','dose','dosage','prescription','drug'],
+    response:'💊 <strong>Medication Guidance:</strong><br>• Always take medications at the scheduled times in your prescription<br>• Never skip doses or self-adjust dosage<br>• Take most tablets with a full glass of water (unless told otherwise)<br>• Some medications need food, others an empty stomach — check with your pharmacist<br>• Check your <strong>Medications tab</strong> for your complete daily schedule<br>⚠️ If you suspect you\'ve taken a wrong dose, call your doctor or Poison Control immediately.',
+    type:'bot', topic:'meds' },
+
+  // ── NUTRITION ────────────────────────────────────────────
+  { triggers:['diet','nutrition','eating','food','healthy eating','weight','obesity','overweight'],
+    response:'🥗 <strong>Healthy Diet Tips:</strong><br>• Fill half your plate with vegetables and fruits at every meal<br>• Choose whole grains (brown rice, oats) over refined carbs<br>• Lean protein: legumes, fish, chicken, eggs<br>• Limit: fried food, processed snacks, sugary drinks<br>• Drink 8–10 glasses of water daily<br>• Avoid skipping meals — eat 3 balanced meals + 1–2 healthy snacks',
+    type:'bot', topic:'diet' },
+
+  // ── EXERCISE ─────────────────────────────────────────────
+  { triggers:['exercise','workout','fitness','physical activity','gym','walk','running'],
+    response:'🏃 <strong>Exercise Guidance:</strong><br>• Aim for 150 min of moderate activity per week (30 min × 5 days)<br>• Walking, cycling, swimming, and yoga are excellent low-impact options<br>• Always warm up 5–10 min before and cool down after<br>• Stay hydrated during exercise<br>• If you have a chronic condition, ask your doctor before starting a new regimen<br>• Rest days are essential — muscles repair during rest.',
+    type:'bot', topic:'exercise' },
+
+  // ── VACCINATIONS ─────────────────────────────────────────
+  { triggers:['vaccine','vaccination','shot','immunization','covid','corona'],
+    response:'💉 <strong>Vaccinations:</strong><br>• Keep your vaccination record updated<br>• Adult vaccines to track: Flu (annual), Td/Tdap, Hepatitis B, COVID-19 boosters<br>• Consult your doctor about vaccines based on age, travel, and health conditions<br>• Common post-vaccine symptoms (soreness, mild fever) resolve in 1–2 days — apply a cool cloth<br>⚠️ Seek care if you develop severe reactions like breathing difficulty after vaccination.',
+    type:'bot', topic:'vaccine' },
+
+  // ── HYDRATION & GENERAL ──────────────────────────────────
+  { triggers:['dehydration','dehydrated','thirsty','dry mouth','dark urine'],
+    response:'💧 <strong>Dehydration:</strong><br>• Drink ORS (Oral Rehydration Solution) for significant fluid loss<br>• Sip water frequently — don\'t gulp large amounts at once<br>• Coconut water and diluted fruit juice are good natural options<br>• Increase intake in hot weather or during fever/vomiting<br>⚠️ Signs of severe dehydration: no urination in 8 h, extreme dizziness, sunken eyes — go to a clinic.',
+    type:'bot', topic:'hydration' },
+
+  // ── GREETINGS / GENERAL ─────────────────────────────────
+  { triggers:['hello','hi','hey','good morning','good evening','howdy','namaste'],
+    response:'👋 Hello! I\'m your SecurePredict Health Assistant. I can help with symptoms, medications, chronic conditions, and general wellness. What are you experiencing today?',
+    type:'bot', topic:'greeting' },
+  { triggers:['thank','thanks','thank you','great','helpful','good bot'],
+    response:'😊 You\'re welcome! Remember, for any serious concerns always consult your doctor. Is there anything else I can help you with?',
+    type:'bot', topic:'thanks' },
+  { triggers:['bye','goodbye','see you','exit','done'],
+    response:'👋 Take care and stay healthy! Remember: for emergencies always call <strong>108</strong>. Come back anytime you need health guidance.',
+    type:'bot', topic:'bye' },
+
+  // ── FALLBACK (last resort) ───────────────────────────────
+  { triggers:['symptom','problem','issue','help','what','how','why'],
+    response:'🤖 I\'m here to help! Try describing your symptom more specifically — for example: <em>"I have a fever and sore throat"</em>, or <em>"my stomach hurts"</em>. I can guide you on over 30 conditions. For complex concerns, please consult your registered doctor.',
+    type:'bot', topic:'general' },
 ];
 
 function sendChat(){
   const input = document.getElementById('chat-input');
   const msg   = input.value.trim();
-  if(!msg) return;
+  if (!msg) return;
   const box = document.getElementById('chat-box');
 
   box.innerHTML += `<div class="chat-msg user">${msg}</div>`;
-  input.value='';
-  box.scrollTop=box.scrollHeight;
+  input.value = '';
+  box.scrollTop = box.scrollHeight;
 
-  const lower = msg.toLowerCase();
-  const match = KB.find(k=>k.triggers.some(t=>lower.includes(t)));
-  setTimeout(()=>{
-    const cls = match?.type==='emergency'?'emergency':'bot';
-    const rep = match?.response||'🤖 I\'m a rule-based assistant. I don\'t have an answer for that specific query. For medical advice, please consult your registered doctor.';
-    box.innerHTML+=`<div class="chat-msg ${cls}">${rep}</div>`;
-    box.scrollTop=box.scrollHeight;
-  },600);
+  // Emergency fast-path — no network needed
+  if (checkEmergency(msg)) {
+    const lower = msg.toLowerCase();
+    const detail = lower.includes('chest') || lower.includes('cardiac') || lower.includes('heart')
+      ? 'Chest pain / cardiac symptoms are life-threatening. Call <strong>108</strong> now. Chew aspirin (325mg) if available and not allergic. Do NOT drive yourself.'
+      : lower.includes('breath')
+        ? 'Difficulty breathing is a medical emergency. Call <strong>108</strong> now. Sit upright, loosen tight clothing, stay calm.'
+        : 'This sounds like a medical emergency. Call <strong>108</strong> or go to the nearest ER immediately.';
+    box.innerHTML += `<div class="chat-msg emergency">🚨 <strong>EMERGENCY — Call 108 immediately!</strong><br>${detail}</div>`;
+    box.scrollTop = box.scrollHeight;
+    return;
+  }
+
+  // Try Gemini AI (primary path)
+  const typingId = showTyping(box);
+
+  if (aiAvailable) {
+    fetch(`${API}/api/v1/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: chatSessionId, message: msg, patient_name: patient?.name || 'Patient' })
+    })
+    .then(async res => {
+      removeTyping(typingId);
+      if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.detail || `HTTP ${res.status}`); }
+      return res.json();
+    })
+    .then(data => {
+      const formatted = formatReply(data.reply);
+      const isEmerg = data.reply.startsWith('\uD83D\uDEA8');
+      box.innerHTML += `<div class="chat-msg ${isEmerg ? 'emergency' : 'bot'}" style="line-height:1.75">
+        <span style="font-size:.7rem;opacity:.5;display:block;margin-bottom:6px">\uD83E\uDE7A Dr. SecurePredict (AI)</span>
+        ${formatted}
+      </div>`;
+      box.scrollTop = box.scrollHeight;
+    })
+    .catch(err => {
+      removeTyping(typingId);
+      console.warn('AI chat unavailable, using local KB:', err.message);
+      aiAvailable = false;
+      useFallbackKB(msg, box);
+      box.innerHTML += `<div class="chat-msg bot" style="font-size:.72rem;opacity:.5;margin-top:4px">\u26A0\uFE0F AI Doctor offline — using local guide. Restart server to re-enable.</div>`;
+      box.scrollTop = box.scrollHeight;
+    });
+  } else {
+    setTimeout(() => { removeTyping(typingId); useFallbackKB(msg, box); }, 600);
+  }
 }
+
+// Offline KB Fallback
+let chatContext = null;
+
+function useFallbackKB(msg, box) {
+  const lower = msg.toLowerCase();
+  let bestMatch = null, bestScore = 0;
+  KB.forEach(entry => {
+    let score = 0;
+    entry.triggers.forEach(t => { if (lower.includes(t)) score++; });
+    if (score > bestScore) { bestScore = score; bestMatch = entry; }
+  });
+  const cls = bestMatch?.type === 'emergency' ? 'emergency' : 'bot';
+  const rep = bestMatch?.response ||
+    `\uD83E\uDD16 I couldn't find a specific answer. Describe your symptom clearly (e.g., "fever", "cough"). For urgent concerns call <strong>104</strong> (National Health Helpline).`;
+  box.innerHTML += `<div class="chat-msg ${cls}">${rep}</div>`;
+  if (bestMatch?.followup) {
+    setTimeout(() => {
+      box.innerHTML += `<div class="chat-msg bot" style="opacity:.8;font-style:italic;font-size:.85rem">\uD83D\uDCAC ${bestMatch.followup}</div>`;
+      box.scrollTop = box.scrollHeight;
+    }, 500);
+  }
+  chatContext = bestMatch?.topic || chatContext;
+  box.scrollTop = box.scrollHeight;
+}
+
 </script>
 </body>
 </html>
