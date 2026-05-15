@@ -9,3 +9,9 @@ folium
 pandas
 plotly
 requests
+opencv-python
+scipy
+librosa
+torch
+torchvision
+numpy

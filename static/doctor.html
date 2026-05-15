@@ -37,6 +37,7 @@
   <div class="sidebar-section">Analytics</div>
   <button class="sidebar-link" onclick="showPage('airisks',this)"><span class="icon">🧠</span>AI Risk Engine</button>
   <button class="sidebar-link" onclick="showPage('map',this)"><span class="icon">🗺️</span>Outbreak Map</button>
+  <button class="sidebar-link" onclick="showPage('earlywarning',this)"><span class="icon">🧠</span>Early Warning Engine</button>
   <div class="sidebar-section">Admin</div>
   <button class="sidebar-link" onclick="showPage('auditlogs',this)"><span class="icon">📜</span>Audit Logs</button>
 </aside>
@@ -201,6 +202,24 @@
     </div>
   </div>
 
+  <!-- EARLY WARNING ENGINE PAGE -->
+  <div class="page" id="page-earlywarning">
+    <div class="page-title">🧠 Early Warning Outbreak Engine (AI-Driven)</div>
+    <div class="page-sub">Aggregating real-time anomalies from non-invasive patient vitals (BVP) and respiratory cough analysis</div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Localized Anomaly Density</div>
+        <div id="early-warning-table-container">
+           <p style="color:var(--text2)">Analyzing real-time clusters...</p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Predictive Hotspots</div>
+        <div id="predictive-map" style="height:400px;width:100%;border-radius:12px"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- AUDIT LOGS PAGE -->
   <div class="page" id="page-auditlogs">
     <div class="page-title">📜 Security Audit Logs</div>
@@ -241,6 +260,7 @@ function showPage(id, el){
   document.getElementById('page-'+id).classList.add('active');
   el.classList.add('active');
   if(id==='map')    setTimeout(loadMap,100);
+  if(id==='earlywarning') setTimeout(loadEarlyWarning, 100);
   if(id==='auditlogs') loadAuditLogs();
   if(id==='airisks')   loadRisk();
 }
@@ -331,9 +351,34 @@ async function verifyOTP(){
   document.getElementById('d-patient-id').value = currentPatient.id;
   document.getElementById('d-pincode').value    = currentPatient.pincode;
   renderPatientRecord(currentPatient);
+  loadSentinelWarning(currentPatient.pincode);
   toast('Access Granted! Records unlocked ✓','success');
   document.getElementById('m-accessed').textContent =
     parseInt(document.getElementById('m-accessed').textContent||0)+1;
+}
+
+async function loadSentinelWarning(pincode){
+  const res = await fetch(`${API}/api/v1/sentinel/risk-assessment/${pincode}`);
+  const data = await res.json();
+  const el = document.getElementById('sentinel-warning-container');
+  
+  if(data.is_high_risk){
+    el.innerHTML = `
+      <div class="alert-banner danger" style="margin-top:16px;border:1px solid #ef4444;background:rgba(239,68,68,0.1)">
+        <div style="font-weight:700;margin-bottom:4px">🦒 ZOONOTIC SPILLOVER WARNING</div>
+        <div style="font-size:.82rem;color:#fca5a5;margin-bottom:10px">
+          Patient's home Pincode (${pincode}) is in a High-Risk zone for: <strong>${data.flagged_pathogens.join(', ')}</strong>.
+        </div>
+        <div style="background:rgba(255,255,255,0.05);padding:10px;border-radius:8px;border-left:4px solid #ef4444">
+          <div style="font-size:.7rem;font-weight:700;color:#fff;margin-bottom:4px;text-transform:uppercase">Clinical Decision Support (CDS)</div>
+          <div style="font-size:.78rem;color:var(--text2)">
+            <strong>Diagnostic Hint:</strong> Local animal data suggests ${data.flagged_pathogens[0]} risk. Consider zoonotic transmission in your differential diagnosis for the patient's current symptoms.
+          </div>
+        </div>
+      </div>`;
+  } else {
+    el.innerHTML = '';
+  }
 }
 
 function renderPatientRecord(p){
@@ -351,7 +396,50 @@ function renderPatientRecord(p){
     <div style="background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:10px;padding:12px">
       <div style="font-size:.75rem;color:var(--orange);margin-bottom:4px">⚠️ DECRYPTED — Lifestyle Habits</div>
       <div style="font-size:.9rem">${p.habits||'None recorded'}</div>
+    </div>
+    
+    <div id="sentinel-warning-container"></div>
+    
+    <div class="card" style="margin-top:20px;background:rgba(79,142,247,0.05);border:1px dashed var(--accent)">
+      <div class="card-title" style="font-size:.9rem">🔍 AI Medical Scan Analyzer (Siamese Network)</div>
+      <p style="font-size:.75rem;color:var(--text2);margin-bottom:12px">Compare patient's scan against healthy references in real-time.</p>
+      <input type="file" id="scan-file" class="inp" style="font-size:.75rem"/>
+      <button class="btn-primary btn-sm" onclick="analyzeScan()" id="scan-btn">Run Zero-Shot Analysis</button>
+      <div id="scan-results" style="margin-top:12px;display:none"></div>
     </div>`;
+}
+
+async function analyzeScan(){
+  if(!currentPatient) return toast('No patient loaded','error');
+  const fileInput = document.getElementById('scan-file');
+  if(!fileInput.files[0]) return toast('Please select a scan image','error');
+  
+  const btn = document.getElementById('scan-btn');
+  btn.disabled = true; btn.textContent = 'Analyzing...';
+  
+  const formData = new FormData();
+  formData.append('file', fileInput.files[0]);
+  
+  try {
+    const res = await fetch(`${API}/api/v1/doctor/analyze-scan?patient_id=${currentPatient.id}&doctor_id=${currentDoctor.id}`, {
+      method: 'POST', body: formData
+    });
+    const data = await res.json();
+    
+    const resDiv = document.getElementById('scan-results');
+    resDiv.style.display = 'block';
+    resDiv.innerHTML = `
+      <div class="alert-banner ${data.anomaly_score > 2 ? 'danger' : 'safe'}" style="margin:0">
+        <div><strong>Anomaly Score: ${data.anomaly_score}%</strong></div>
+        <div style="font-size:.75rem">${data.anomaly_score > 2 ? '⚠️ High deviation detected. AI flagged bounding boxes.' : '✅ Within normal parameters.'}</div>
+        ${data.bounding_boxes.length ? `<div style="font-size:.7rem;margin-top:4px">Bounding Boxes: ${JSON.stringify(data.bounding_boxes)}</div>` : ''}
+      </div>`;
+    toast('Scan analysis complete','success');
+  } catch(e) {
+    toast('Analysis failed','error');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Run Zero-Shot Analysis';
+  }
 }
 
 // ── Diagnosis ─────────────────────────────────────────────
@@ -468,6 +556,87 @@ async function loadMap(){
     legend.innerHTML+=`<span class="tag" style="background:${isOut?'rgba(239,68,68,.15)':'rgba(34,197,94,.1)'};color:${color};border-color:${color}40">${isOut?'🔴':'🟢'} ${area} (${pc})</span>`;
   }
   if(!ob.length) list.innerHTML='<div class="alert-banner safe">✅ No active outbreaks. All zones normal.</div>';
+}
+
+// ── Early Warning Engine ──────────────────────────────────
+let predictiveMap = null;
+async function loadEarlyWarning(){
+  const res = await fetch(`${API}/api/v1/aggregation/outbreak-status`);
+  const data = await res.json();
+  const humanPreds = data.human_predictions || [];
+  const animalRisks = data.animal_risks || [];
+  
+  const table = document.getElementById('early-warning-table-container');
+  if(!humanPreds.length && !animalRisks.length){
+    table.innerHTML = '<div class="alert-banner safe">✅ No significant anomaly clusters detected.</div>';
+  } else {
+    table.innerHTML = `
+      <div style="font-size:.7rem;color:var(--text2);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">One Health Overlap Analysis</div>
+      <table style="width:100%;font-size:.8rem;border-collapse:collapse">
+        <thead>
+          <tr style="text-align:left;color:var(--text2);border-bottom:1px solid var(--bg2)">
+            <th style="padding:6px">Pincode</th>
+            <th style="padding:6px">Type</th>
+            <th style="padding:6px">Alert</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${animalRisks.map(a=>`
+            <tr style="border-bottom:1px solid var(--bg2);background:rgba(239,68,68,0.05)">
+              <td style="padding:6px">${a.pincode}</td>
+              <td style="padding:6px;color:#fca5a5">🦒 Animal</td>
+              <td style="padding:6px">${a.pathogen}</td>
+            </tr>
+          `).join('')}
+          ${humanPreds.map(p=>`
+            <tr style="border-bottom:1px solid var(--bg2);background:rgba(59,130,246,0.05)">
+              <td style="padding:6px">${p.pincode}</td>
+              <td style="padding:6px;color:#93c5fd">🧑 Human</td>
+              <td style="padding:6px">${p.risk_level} Risk</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>`;
+  }
+  
+  if(!predictiveMap){
+    predictiveMap = L.map('predictive-map').setView([12.9716,77.5946],11);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
+      attribution:'©CartoDB', subdomains:'abcd'
+    }).addTo(predictiveMap);
+    
+    // Add Legend Overlay
+    const legend = L.control({position: 'bottomright'});
+    legend.onAdd = function (map) {
+        const div = L.DomUtil.create('div', 'map-legend');
+        div.style.cssText = 'background:rgba(0,0,0,0.8);padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);color:#fff;font-size:.75rem;';
+        div.innerHTML = `
+            <div style="font-weight:700;margin-bottom:6px">ONE HEALTH SENTINEL</div>
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><div style="width:12px;height:12px;border-radius:50%;background:#ef4444"></div> Animal Risk (NIVEDI)</div>
+            <div style="display:flex;align-items:center;gap:6px"><div style="width:12px;height:12px;border-radius:50%;background:#3b82f6"></div> Human Anomaly (AI)</div>
+        `;
+        return div;
+    };
+    legend.addTo(predictiveMap);
+  } else {
+    predictiveMap.eachLayer(l => { if(l instanceof L.Marker || l instanceof L.Circle) predictiveMap.removeLayer(l); });
+  }
+  
+  // Render Animal Risks (RED)
+  animalRisks.forEach(a => {
+    const coords = PINCODES[a.pincode] || [12.9716, 77.5946];
+    L.circle(coords.slice(0,2), {
+      color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.4, radius: 2500
+    }).addTo(predictiveMap).bindPopup(`<b>🦒 ANIMAL ALERT</b><br>District: ${a.district}<br>Pathogen: ${a.pathogen}<br>NIVEDI Risk: ${Math.round(a.risk*100)}%`);
+  });
+
+  // Render Human Anomaly Clusters (BLUE)
+  humanPreds.forEach(p => {
+    const coords = PINCODES[p.pincode] || [12.9716, 77.5946];
+    L.circle(coords.slice(0,2), {
+      color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.3, radius: 1800
+    }).addTo(predictiveMap).bindPopup(`<b>🧑 HUMAN ANOMALY</b><br>Pincode: ${p.pincode}<br>Risk: ${p.risk_level}<br>Symptom Density: ${p.anomaly_density}`);
+  });
 }
 
 // ── Audit Logs ────────────────────────────────────────────

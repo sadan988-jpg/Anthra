@@ -37,7 +37,7 @@ def get_outbreaks():
 if role == "Doctor Portal":
     st.title("👨‍⚕️ Doctor Diagnostic Dashboard")
     
-    tab1, tab2, tab3 = st.tabs(["Search Patient", "Predictive Analytics", "Regional Health Map"])
+    tab1, tab2, tab3, tab4 = st.tabs(["Search Patient", "Predictive Analytics", "Regional Health Map", "Early Warning Engine"])
     
     with tab1:
         col1, col2 = st.columns([1, 2])
@@ -134,6 +134,39 @@ if role == "Doctor Portal":
             ).add_to(m)
         
         st_folium(m, width=1000, height=500)
+
+    with tab4:
+        st.subheader("🧠 Early Warning Outbreak Engine (AI Driven)")
+        st.info("This engine aggregates real-time anomalies from non-invasive patient vitals (BVP) and respiratory cough analysis.")
+        
+        preds = requests.get(f"{BASE_URL}/api/v1/aggregation/outbreak-status").json()
+        
+        if not preds:
+            st.success("No significant anomaly clusters detected in the last 48 hours.")
+        else:
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                df_preds = pd.DataFrame(preds)
+                st.table(df_preds)
+                
+                # Visualizing anomaly density
+                fig = px.bar(df_preds, x="pincode", y="anomaly_density", color="risk_level", 
+                             title="Localized Anomaly Density by Pincode",
+                             color_discrete_map={"High": "red", "Medium": "orange", "Low": "green"})
+                st.plotly_chart(fig, use_container_width=True)
+            
+            with col2:
+                # Map for early warning
+                m2 = folium.Map(location=[12.9716, 77.5946], zoom_start=11)
+                for p in preds:
+                    coords = pincode_coords.get(p["pincode"], [12.9716, 77.5946])
+                    color = "red" if p["risk_level"] == "High" else "orange" if p["risk_level"] == "Medium" else "green"
+                    folium.Marker(
+                        location=coords,
+                        popup=f"RISK: {p['risk_level']} | Density: {p['anomaly_density']}",
+                        icon=folium.Icon(color=color, icon='info-sign')
+                    ).add_to(m2)
+                st_folium(m2, width=400, height=400)
 
 # --- PATIENT PORTAL ---
 else:

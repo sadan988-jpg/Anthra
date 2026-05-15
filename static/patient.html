@@ -31,6 +31,7 @@
   <button class="sidebar-link active" onclick="showPage('home',this)"><span class="icon">🏠</span>Home</button>
   <button class="sidebar-link" onclick="showPage('meds',this)"><span class="icon">💊</span>Medications</button>
   <button class="sidebar-link" onclick="showPage('history',this)"><span class="icon">📋</span>Health History</button>
+  <button class="sidebar-link" onclick="showPage('diagnostics',this)"><span class="icon">🧠</span>AI Diagnostics</button>
   <div class="sidebar-section">Security</div>
   <button class="sidebar-link" onclick="showPage('security',this)"><span class="icon">🔑</span>Security Keys</button>
   <button class="sidebar-link" onclick="showPage('auditlogs',this)"><span class="icon">📜</span>Audit Trail</button>
@@ -45,6 +46,7 @@
     <div class="page-title" id="home-title">My Health Dashboard</div>
     <div class="page-sub" id="home-sub">Your personal health command center</div>
     <div id="outbreak-banner" style="margin-bottom:16px"></div>
+    <div id="sentinel-status" style="margin-bottom:16px"></div>
     <div class="metrics-row" style="grid-template-columns:repeat(3,1fr)">
       <div class="metric-card blue">
         <div class="metric-label">Registered Pincode</div>
@@ -113,6 +115,42 @@
     <div class="page-title">📋 Health History</div>
     <div class="page-sub">All recorded diagnoses and doctor visits</div>
     <div id="history-list"></div>
+  </div>
+
+  <!-- AI DIAGNOSTICS PAGE -->
+  <div class="page" id="page-diagnostics">
+    <div class="page-title">🧠 AI Health Diagnostics (Non-Invasive)</div>
+    <div class="page-sub">Monitor your vitals and respiratory health using AI-powered camera and audio analysis</div>
+    <div class="grid-2">
+      <!-- Vitals Analysis -->
+      <div class="card">
+        <div class="card-title">📹 Video Plethysmography (Vitals)</div>
+        <p style="font-size:.82rem;color:var(--text2);margin-bottom:12px">Upload a 30-second selfie video to analyze Blood Volume Pulse (BVP), Hemoglobin, and Glucose trends.</p>
+        <input type="file" id="vitals-video" class="inp" accept="video/*"/>
+        <button class="btn-primary" onclick="runVitalsAnalysis()" id="vitals-btn">Analyze Vitals →</button>
+        <div id="vitals-results" style="margin-top:16px;display:none"></div>
+      </div>
+      
+      <!-- Cough Analysis -->
+      <div class="card">
+        <div class="card-title">🎙️ Audio-Biopsy (Respiratory)</div>
+        <p style="font-size:.82rem;color:var(--text2);margin-bottom:12px">Record or upload a 5-second cough sample to evaluate respiratory fluid buildup scores.</p>
+        <input type="file" id="cough-audio" class="inp" accept="audio/*"/>
+        <button class="btn-secondary" onclick="runCoughAnalysis()" id="cough-btn">Analyze Cough →</button>
+        <div id="cough-results" style="margin-top:16px;display:none"></div>
+      </div>
+      
+      <!-- Facial Phenotype Analysis -->
+      <div class="card" style="grid-column: span 2">
+        <div class="card-title">📸 Facial Phenotype Analysis (AI Screening)</div>
+        <p style="font-size:.82rem;color:var(--text2);margin-bottom:12px">Upload a high-clearance front-facing photo to screen for specific phenotypic markers associated with systemic conditions.</p>
+        <div style="display:flex;gap:12px;align-items:center">
+          <input type="file" id="face-image" class="inp" accept="image/*" style="flex:1;margin:0"/>
+          <button class="btn-green" onclick="runFaceAnalysis()" id="face-btn" style="width:200px">Run AI Screening →</button>
+        </div>
+        <div id="face-results" style="margin-top:16px;display:none"></div>
+      </div>
+    </div>
   </div>
 
   <!-- SECURITY PAGE -->
@@ -229,6 +267,30 @@ async function loadDashboard(){
   // Quick meds on home
   renderAllMeds(diagnoses);
   renderHistory(diagnoses);
+  await loadSentinelStatus();
+}
+
+async function loadSentinelStatus(){
+  const res = await fetch(`${API}/api/v1/sentinel/risk-assessment/${patient.pincode}`);
+  const data = await res.json();
+  const el = document.getElementById('sentinel-status');
+  
+  const colors = { "High Risk": "#ef4444", "Medium Risk": "#f59e0b", "Low Risk": "#22c55e" };
+  const bgColor = colors[data.status] || "#22c55e";
+  
+  el.innerHTML = `
+    <div class="alert-banner" style="background:${bgColor}20;border:1px solid ${bgColor}40;display:flex;align-items:center;gap:12px">
+      <span style="font-size:1.2rem">${data.is_high_risk ? '⚠️' : '🛡️'}</span>
+      <div style="flex:1">
+        <div style="font-size:.85rem;font-weight:700;color:${bgColor}">COMMUNITY HEALTH STATUS: ${data.status}</div>
+        <div style="font-size:.78rem;color:var(--text2)">
+          ${data.is_high_risk 
+            ? `Local Alert: High risk of ${data.flagged_pathogens.join(', ')} spillover. Avoid contact with livestock and report any respiratory symptoms immediately.` 
+            : `Your area shows ${data.status.toLowerCase()} for zoonotic spillover. Monitoring active.`}
+        </div>
+      </div>
+      <div class="nav-badge" style="background:${bgColor};color:#fff;margin:0">${Math.round(data.combined_spillover_risk * 100)}% Risk</div>
+    </div>`;
 }
 
 function renderAllMeds(diagnoses){
@@ -310,6 +372,113 @@ async function loadAuditLogs(){
   document.getElementById('pat-audit-list').innerHTML = logs.length
     ? logs.map(l=>`<div class="log-item"><div class="log-dot" style="background:${l.event.includes('GRANTED')?'var(--orange)':'var(--accent)'}"></div><div><div class="log-event">${l.event}</div><div class="log-time">${l.timestamp?.replace('T',' ').slice(0,19)||''}</div></div></div>`).join('')
     : '<p style="color:var(--text2)">No audit events yet.</p>';
+}
+
+// ── AI Diagnostics ────────────────────────────────────────
+async function runVitalsAnalysis(){
+  const fileInput = document.getElementById('vitals-video');
+  if(!fileInput.files[0]) return toast('Please select a video file','error');
+  
+  const btn = document.getElementById('vitals-btn');
+  btn.disabled = true; btn.textContent = 'Processing...';
+  
+  const formData = new FormData();
+  formData.append('file', fileInput.files[0]);
+  
+  try {
+    const res = await fetch(`${API}/api/v1/patient/analyze-vitals?patient_id=${patient.id}&pincode=${patient.pincode}`, {
+      method: 'POST', body: formData
+    });
+    const data = await res.json();
+    
+    const resDiv = document.getElementById('vitals-results');
+    resDiv.style.display = 'block';
+    resDiv.innerHTML = `
+      <div class="alert-banner safe" style="margin:0">
+        <div style="font-weight:700;margin-bottom:8px">Vitals Trend Extracted ✓</div>
+        <div style="font-size:.85rem">Predicted Hemoglobin: <strong>${data.hemoglobin_trend[0].toFixed(1)} g/dL</strong></div>
+        <div style="font-size:.85rem">Predicted Glucose: <strong>${data.glucose_trend[0].toFixed(0)} mg/dL</strong></div>
+        <div style="font-size:.7rem;margin-top:8px;opacity:.8">BVP Stability: High. Trends saved to secure cloud for community surveillance.</div>
+      </div>`;
+    toast('Vitals analysis complete','success');
+  } catch(e) {
+    toast('Analysis failed','error');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Analyze Vitals →';
+  }
+}
+
+async function runCoughAnalysis(){
+  const fileInput = document.getElementById('cough-audio');
+  if(!fileInput.files[0]) return toast('Please select an audio file','error');
+  
+  const btn = document.getElementById('cough-btn');
+  btn.disabled = true; btn.textContent = 'Processing...';
+  
+  const formData = new FormData();
+  formData.append('file', fileInput.files[0]);
+  
+  try {
+    const res = await fetch(`${API}/api/v1/patient/analyze-cough?patient_id=${patient.id}&pincode=${patient.pincode}`, {
+      method: 'POST', body: formData
+    });
+    const data = await res.json();
+    
+    const resDiv = document.getElementById('cough-results');
+    resDiv.style.display = 'block';
+    resDiv.innerHTML = `
+      <div class="alert-banner ${data.fluid_score > 60 ? 'danger' : 'safe'}" style="margin:0">
+        <div style="font-weight:700;margin-bottom:8px">Respiratory Analysis Result ✓</div>
+        <div style="font-size:.85rem">Fluid Buildup Score: <strong>${data.fluid_score}/100</strong></div>
+        <div style="font-size:.78rem;margin-top:4px">${data.fluid_score > 60 ? '⚠️ Warning: AI detected patterns consistent with respiratory congestion.' : '✅ Normal lung sounds detected.'}</div>
+        <div style="font-size:.7rem;margin-top:8px;opacity:.8;background:rgba(255,255,255,0.1);padding:4px;border-radius:4px">Mel-spectrogram heatmap generated & archived.</div>
+      </div>`;
+    toast('Cough analysis complete','success');
+  } catch(e) {
+    toast('Analysis failed','error');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Analyze Cough →';
+  }
+}
+
+async function runFaceAnalysis(){
+  const fileInput = document.getElementById('face-image');
+  if(!fileInput.files[0]) return toast('Please select an image file','error');
+  
+  const btn = document.getElementById('face-btn');
+  btn.disabled = true; btn.textContent = 'Screening...';
+  
+  const formData = new FormData();
+  formData.append('file', fileInput.files[0]);
+  
+  try {
+    const res = await fetch(`${API}/api/v1/patient/analyze-face`, {
+      method: 'POST', body: formData
+    });
+    const data = await res.json();
+    
+    const resDiv = document.getElementById('face-results');
+    resDiv.style.display = 'block';
+    resDiv.innerHTML = `
+      <div class="alert-banner ${data.disease === 'Healthy / Undetermined' ? 'safe' : 'danger'}" style="margin:0; background:rgba(0,0,0,0.2)">
+        <div style="font-weight:700;margin-bottom:8px;font-size:1.1rem;color:#fff">AI Screening Result: ${data.disease}</div>
+        <div style="font-size:.9rem;color:var(--text2)">Confidence Level: <strong>${data.confidence}</strong></div>
+        <div style="margin-top:10px">
+          <div style="font-size:.75rem;font-weight:700;color:var(--accent);margin-bottom:4px;text-transform:uppercase">Detected Markers:</div>
+          <ul style="font-size:.82rem;margin:0;padding-left:16px;color:#cbd5e1">
+            ${data.phenotypic_markers.map(m=>`<li>${m}</li>`).join('')}
+          </ul>
+        </div>
+        <div style="font-size:.7rem;margin-top:12px;opacity:.7;padding:8px;border-top:1px solid rgba(255,255,255,0.1)">
+          <strong>Technical Metrics:</strong> Variance: ${data.analysis_metrics.texture_variance} | Eye Ratio: ${data.analysis_metrics.eye_to_face_ratio}% | Aspect Ratio: ${data.analysis_metrics.facial_aspect_ratio}
+        </div>
+      </div>`;
+    toast('Facial analysis complete','success');
+  } catch(e) {
+    toast('Screening failed','error');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Run AI Screening →';
+  }
 }
 
 // ══════════════════════════════════════════════════════════

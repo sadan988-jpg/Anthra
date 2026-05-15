@@ -11,6 +11,16 @@ from fastapi.staticfiles import StaticFiles
 import models
 from database import SessionLocal
 from security import encrypt_data, decrypt_data
+import analytics
+import os
+from fastapi import UploadFile, File
+import shutil
+import json
+
+# Ensure temp directory for uploads
+UPLOAD_DIR = "uploads"
+if not os.path.exists(UPLOAD_DIR):
+    os.makedirs(UPLOAD_DIR)
 
 # Initialize DB
 models.init_db()
@@ -319,6 +329,171 @@ def predict_risk(patient_id: int, db: Session = Depends(get_db)):
     return {
         "risk_percentage": min(risk_score, 100),
         "breakdown": factors
+    }
+
+# ─── MODULE 1: Patient Predictive Flow ──────────────────────────────────────
+
+@app.post("/api/v1/patient/analyze-vitals")
+async def analyze_vitals(patient_id: int, pincode: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    file_path = os.path.join(UPLOAD_DIR, f"vitals_{patient_id}_{file.filename}")
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    
+    try:
+        results = analytics.process_vitals_video(file_path)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Internal server error during video analysis.")
+    
+    db_vitals = models.VitalsTrend(
+        patient_id=patient_id,
+        pincode=pincode,
+        bvp_signal=results["bvp_signal"],
+        hemoglobin_trend=results["hemoglobin_trend"],
+        glucose_trend=results["glucose_trend"]
+    )
+    db.add(db_vitals)
+    db.commit()
+    
+    return results
+
+@app.post("/api/v1/patient/analyze-cough")
+async def analyze_cough(patient_id: int, pincode: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    file_path = os.path.join(UPLOAD_DIR, f"cough_{patient_id}_{file.filename}")
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    
+    results = analytics.analyze_cough_audio(file_path)
+    
+    db_respiratory = models.RespiratoryAnalysis(
+        patient_id=patient_id,
+        pincode=pincode,
+        fluid_buildup_score=results["fluid_score"],
+        intensity_heatmap=results["intensity_heatmap"]
+    )
+    db.add(db_respiratory)
+    db.commit()
+    
+    return results
+
+# ─── MODULE 2: Doctor Scan Analyzer ──────────────────────────────────────────
+
+@app.post("/api/v1/doctor/analyze-scan")
+async def analyze_scan(patient_id: int, doctor_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    file_path = os.path.join(UPLOAD_DIR, f"scan_{patient_id}_{file.filename}")
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    
+    results = analytics.analyze_medical_scan(file_path)
+    
+    db_scan = models.ScanAnalysis(
+        patient_id=patient_id,
+        doctor_id=doctor_id,
+        anomaly_score=results["anomaly_score"],
+        bounding_boxes=results["bounding_boxes"],
+        file_path=file_path
+    )
+    db.add(db_scan)
+    
+    # Securely log the update
+    audit = models.AuditLog(event=f"Dr. {doctor_id} analyzed scan for Patient {patient_id}. Anomaly: {results['anomaly_score']}%")
+    db.add(audit)
+    
+    db.commit()
+    return results
+
+# ─── MODULE 3: Outbreak Prediction Aggregator ───────────────────────────────
+
+import disease_detection
+
+@app.post("/api/v1/patient/analyze-face")
+async def analyze_face(file: UploadFile = File(...)):
+    file_path = os.path.join(UPLOAD_DIR, f"face_{file.filename}")
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    
+    try:
+        results = disease_detection.analyze_facial_phenotype(file_path)
+        return results
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Internal server error during face analysis.")
+
+@app.get("/api/v1/aggregation/outbreak-status")
+def get_outbreak_status(db: Session = Depends(get_db)):
+    # Scan human records from last 48 hours
+    cutoff = datetime.datetime.utcnow() - datetime.timedelta(hours=48)
+    vitals_anomalies = db.query(models.VitalsTrend).filter(models.VitalsTrend.timestamp > cutoff).all()
+    respiratory_anomalies = db.query(models.RespiratoryAnalysis).filter(models.RespiratoryAnalysis.timestamp > cutoff).all()
+    
+    # Aggregate by Pincode
+    pincode_map = {}
+    for v in vitals_anomalies:
+        pincode_map[v.pincode] = pincode_map.get(v.pincode, {"vitals": 0, "respiratory": 0})
+        pincode_map[v.pincode]["vitals"] += 1
+    for r in respiratory_anomalies:
+        pincode_map[r.pincode] = pincode_map.get(r.pincode, {"vitals": 0, "respiratory": 0})
+        pincode_map[r.pincode]["respiratory"] += 1
+        
+    human_predictions = []
+    for pincode, counts in pincode_map.items():
+        risk, density = analytics.predict_outbreak_risk(counts["vitals"], counts["respiratory"])
+        human_predictions.append({
+            "pincode": pincode, "risk_level": risk, "anomaly_density": density,
+            "vitals_spikes": counts["vitals"], "respiratory_warnings": counts["respiratory"]
+        })
+
+    # Fetch Animal Risk Data
+    animal_risks = db.query(models.AnimalDiseaseRisk).all()
+    animal_data = [
+        {"pincode": r.pincode, "district": r.district, "pathogen": r.pathogen_type, "risk": r.risk_level}
+        for r in animal_risks
+    ]
+    
+    return {
+        "human_predictions": human_predictions,
+        "animal_risks": animal_data
+    }
+
+# ─── MODULE: One Health Sentinel (Spillover Logic) ──────────────────────────
+
+@app.get("/api/v1/sentinel/risk-assessment/{pincode}")
+def assess_spillover_risk(pincode: str, db: Session = Depends(get_db)):
+    """
+    Calculates combined spillover risk by correlating animal risk scores (NIVEDI)
+    with human respiratory symptom anomalies (Audio-Biopsy).
+    """
+    # 1. Retrieve Animal Risk
+    animal_risks = db.query(models.AnimalDiseaseRisk).filter(models.AnimalDiseaseRisk.pincode == pincode).all()
+    max_animal_risk = max([r.risk_level for r in animal_risks]) if animal_risks else 0.0
+    pathogens = [r.pathogen_type for r in animal_risks]
+
+    # 2. Retrieve Human Respiratory Anomalies (Last 48h)
+    cutoff = datetime.datetime.utcnow() - datetime.timedelta(hours=48)
+    human_logs = db.query(models.RespiratoryAnalysis).filter(
+        models.RespiratoryAnalysis.pincode == pincode,
+        models.RespiratoryAnalysis.timestamp > cutoff
+    ).all()
+    
+    total_patients_in_pincode = db.query(models.Patient).filter(models.Patient.pincode == pincode).count()
+    anomaly_density = (len(human_logs) / total_patients_in_pincode) if total_patients_in_pincode > 0 else 0
+    
+    # 3. Calculate Combined Risk
+    # High Risk if Animal_Risk > 0.7 AND Human_Symptom_Density > 10%
+    is_high_risk = (max_animal_risk > 0.7) and (anomaly_density > 0.10)
+    
+    risk_score = (max_animal_risk * 0.6) + (min(anomaly_density * 5, 1.0) * 0.4)
+    
+    return {
+        "pincode": pincode,
+        "combined_spillover_risk": round(risk_score, 2),
+        "is_high_risk": is_high_risk,
+        "animal_risk": max_animal_risk,
+        "human_anomaly_density": round(anomaly_density, 2),
+        "flagged_pathogens": pathogens,
+        "status": "High Risk" if is_high_risk else "Medium Risk" if risk_score > 0.4 else "Low Risk"
     }
 
 @app.get("/audit_logs")
